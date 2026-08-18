@@ -36,9 +36,8 @@ type File struct {
 	RetryWindowMinutes   int      `yaml:"retry_window_minutes"`
 
 	Route struct {
-		UsualTrainNos    []string `yaml:"usual_train_nos"`
-		LookbackMinutes  int      `yaml:"lookback_minutes"`
-		LookaheadMinutes int      `yaml:"lookahead_minutes"`
+		LookbackMinutes  int `yaml:"lookback_minutes"`
+		LookaheadMinutes int `yaml:"lookahead_minutes"`
 
 		ExcludedTrainTypeIDs      []string `yaml:"excluded_train_type_ids"`
 		ExcludedTrainTypeKeywords []string `yaml:"excluded_train_type_keywords"`
@@ -105,9 +104,8 @@ type Config struct {
 	Board      time.Duration
 	RiskMargin time.Duration
 
-	Window        domain.Window
-	Filter        domain.TypeFilter
-	UsualTrainNos []string
+	Window domain.Window
+	Filter domain.TypeFilter
 
 	CertificateEnabled  bool
 	CertificateMinDelay time.Duration

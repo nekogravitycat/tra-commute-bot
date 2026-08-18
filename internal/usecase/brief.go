@@ -15,14 +15,16 @@ import (
 // for them. The six trip parameters that change often (schedule, ready
 // time, deadline, route, max early leave) are not here — they are read fresh
 // from SettingsStore on every run instead, since the whole point of the
-// Telegram interface is that they can change without a restart.
+// Telegram interface is that they can change without a restart. Usual train
+// numbers are likewise not here, despite applying to every Schedule rather
+// than one: they are user-editable live over /usualtrain, so Run takes them
+// as a parameter instead, read fresh alongside trip on every tick.
 type BriefSettings struct {
 	Board      time.Duration
 	RiskMargin time.Duration
 
-	Window        domain.Window
-	Filter        domain.TypeFilter
-	UsualTrainNos []string
+	Window domain.Window
+	Filter domain.TypeFilter
 
 	CertificateEnabled  bool
 	CertificateMinDelay time.Duration
@@ -60,13 +62,13 @@ type Result struct {
 }
 
 // Run executes steps 3 through 8 of §5.1 for the schedule that fired at
-// firedAt, using trip — the live settings read once by the caller (Tick.Run)
-// for this wake-up.
+// firedAt, using trip and usualTrainNos — the live settings read once by the
+// caller (Tick.Run) for this wake-up.
 //
 // Every data-collection failure is caught and turned into a degraded brief
 // rather than an early return. The only error Run reports is a failure to
 // deliver anything at all.
-func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string, trip domain.Settings) (Result, error) {
+func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string, trip domain.Settings, usualTrainNos []string) (Result, error) {
 	params := b.params(firedAt, trip)
 	in := domain.BriefInput{
 		GeneratedAt:         firedAt,
@@ -108,7 +110,7 @@ func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string,
 		Params:        params,
 		Window:        b.Settings.Window,
 		Filter:        b.Settings.Filter,
-		UsualTrainNos: b.Settings.UsualTrainNos,
+		UsualTrainNos: usualTrainNos,
 	})
 	if len(plan.UnknownTypes) > 0 {
 		// Logged so the unrecognised names can be folded into the config

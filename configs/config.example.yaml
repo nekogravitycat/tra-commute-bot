@@ -26,11 +26,12 @@ retry_window_minutes: 10    # retry every minute until [at, at+10], then send
                             # the degraded notice and stop for the day
 
 # Shared by every Schedule (§8's note): if two Schedules run opposite
-# directions, usual_train_nos and the train-type filter below apply to both,
-# which is a known simplification — see spec.md §8 and v0.3 in §13.
+# directions, the train-type filter below applies to both, which is a known
+# simplification — see spec.md §8 and v0.3 in §13. Habitual trains
+# (usual_train_nos) are no longer set here — they change often enough that a
+# restart-requiring file edit is the wrong interface; set them live over
+# Telegram with /usualtrain instead (§10 of spec.md).
 route:
-  usual_train_nos: ["2008", "1136", "1138"]   # marked as habitual; does not
-                                              # restrict the candidate set
   lookback_minutes: 30      # reach backwards for trains whose scheduled
                             # departure has passed but which are running late
   lookahead_minutes: 60

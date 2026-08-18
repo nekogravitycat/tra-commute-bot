@@ -61,6 +61,15 @@ func (s Settings) Schedule() Schedule {
 // listing stays stable between edits.
 type SettingsList struct {
 	Schedules []Settings
+
+	// UsualTrainNos are the user's habitual train numbers (§2.2, §8): a train
+	// on this list is always shown even if the ranking would otherwise drop
+	// it from the candidate table. Shared across every Schedule rather than
+	// per-route — a train number only ever runs in one direction, so a
+	// shared list does not misfire against an unrelated Schedule (see
+	// spec.md §8's note). Set live via /usualtrain rather than config.yaml,
+	// so it takes effect on the next tick without a restart.
+	UsualTrainNos []string
 }
 
 // Find returns the named Schedule, if any.
@@ -91,7 +100,7 @@ func (l SettingsList) NameTaken(name, except string) bool {
 // Schedule is always replaced whole (§10.2 invariant 1) — never patched
 // field-by-field in place.
 func (l SettingsList) Upsert(s Settings) SettingsList {
-	out := SettingsList{Schedules: make([]Settings, len(l.Schedules))}
+	out := SettingsList{Schedules: make([]Settings, len(l.Schedules)), UsualTrainNos: l.UsualTrainNos}
 	copy(out.Schedules, l.Schedules)
 	for i, existing := range out.Schedules {
 		if existing.Name == s.Name {
@@ -105,10 +114,36 @@ func (l SettingsList) Upsert(s Settings) SettingsList {
 
 // Remove returns a copy of the list with the named Schedule deleted.
 func (l SettingsList) Remove(name string) SettingsList {
-	out := SettingsList{Schedules: make([]Settings, 0, len(l.Schedules))}
+	out := SettingsList{Schedules: make([]Settings, 0, len(l.Schedules)), UsualTrainNos: l.UsualTrainNos}
 	for _, s := range l.Schedules {
 		if s.Name != name {
 			out.Schedules = append(out.Schedules, s)
+		}
+	}
+	return out
+}
+
+// AddUsualTrain returns a copy of the list with no marked habitual. A train
+// already on the list is left alone rather than duplicated.
+func (l SettingsList) AddUsualTrain(no string) SettingsList {
+	for _, existing := range l.UsualTrainNos {
+		if existing == no {
+			return l
+		}
+	}
+	out := l
+	out.UsualTrainNos = append(append([]string{}, l.UsualTrainNos...), no)
+	return out
+}
+
+// RemoveUsualTrain returns a copy of the list with no no longer marked
+// habitual. Removing a train not on the list is a no-op.
+func (l SettingsList) RemoveUsualTrain(no string) SettingsList {
+	out := l
+	out.UsualTrainNos = make([]string, 0, len(l.UsualTrainNos))
+	for _, existing := range l.UsualTrainNos {
+		if existing != no {
+			out.UsualTrainNos = append(out.UsualTrainNos, existing)
 		}
 	}
 	return out

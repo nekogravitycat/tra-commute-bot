@@ -123,3 +123,77 @@ func TestSettingsRoute(t *testing.T) {
 		t.Errorf("route = %+v, want 桃園 -> 臺北", r)
 	}
 }
+
+func TestSettingsListAddUsualTrainDedupes(t *testing.T) {
+	var l SettingsList
+	l = l.AddUsualTrain("2008")
+	l = l.AddUsualTrain("1136")
+	l = l.AddUsualTrain("2008") // already present: must not duplicate
+
+	if len(l.UsualTrainNos) != 2 {
+		t.Fatalf("usual train nos = %v, want 2 entries", l.UsualTrainNos)
+	}
+}
+
+func TestSettingsListAddUsualTrainDoesNotMutateOriginal(t *testing.T) {
+	original := SettingsList{UsualTrainNos: []string{"2008"}}
+	_ = original.AddUsualTrain("1136")
+
+	if len(original.UsualTrainNos) != 1 {
+		t.Errorf("original list was mutated: %v", original.UsualTrainNos)
+	}
+}
+
+func TestSettingsListRemoveUsualTrain(t *testing.T) {
+	l := SettingsList{UsualTrainNos: []string{"2008", "1136", "1138"}}
+	l = l.RemoveUsualTrain("1136")
+
+	want := []string{"2008", "1138"}
+	if len(l.UsualTrainNos) != len(want) {
+		t.Fatalf("usual train nos = %v, want %v", l.UsualTrainNos, want)
+	}
+	for i, no := range want {
+		if l.UsualTrainNos[i] != no {
+			t.Errorf("usual train nos = %v, want %v", l.UsualTrainNos, want)
+		}
+	}
+}
+
+// TestSettingsListRemoveUsualTrainAbsentIsNoOp checks removing a train number
+// that was never added does not error or panic — /usualtrain's delete button
+// can only ever offer numbers already on the list, but a concurrent removal
+// from another session must still fail safely.
+func TestSettingsListRemoveUsualTrainAbsentIsNoOp(t *testing.T) {
+	l := SettingsList{UsualTrainNos: []string{"2008"}}
+	l = l.RemoveUsualTrain("9999")
+
+	if len(l.UsualTrainNos) != 1 || l.UsualTrainNos[0] != "2008" {
+		t.Errorf("usual train nos = %v, want unchanged [2008]", l.UsualTrainNos)
+	}
+}
+
+// TestSettingsListUpsertPreservesUsualTrainNos guards against a regression
+// where writing a Schedule (via /setup or /manage) would silently wipe the
+// unrelated, list-wide usual-train marker.
+func TestSettingsListUpsertPreservesUsualTrainNos(t *testing.T) {
+	l := SettingsList{UsualTrainNos: []string{"2008", "1136"}}
+	l = l.Upsert(commuteSettings("上班通勤"))
+
+	if len(l.UsualTrainNos) != 2 {
+		t.Errorf("usual train nos = %v, want unchanged [2008 1136]", l.UsualTrainNos)
+	}
+}
+
+// TestSettingsListRemovePreservesUsualTrainNos is the same guard as above,
+// for the /manage delete-Schedule path.
+func TestSettingsListRemovePreservesUsualTrainNos(t *testing.T) {
+	l := SettingsList{
+		Schedules:     []Settings{commuteSettings("上班通勤")},
+		UsualTrainNos: []string{"2008", "1136"},
+	}
+	l = l.Remove("上班通勤")
+
+	if len(l.UsualTrainNos) != 2 {
+		t.Errorf("usual train nos = %v, want unchanged [2008 1136]", l.UsualTrainNos)
+	}
+}

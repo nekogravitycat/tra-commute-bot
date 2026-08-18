@@ -87,6 +87,13 @@ type Session struct {
 	// edits the existing message in place instead of resending it.
 	PickerMessageID int
 
+	// AwaitingUsualTrainNo is /usualtrain's one piece of session state
+	// (§usualtrain.go): true after "➕ 新增常搭班次" is pressed, until the
+	// next text message answers it. It sits outside the Field/Draft
+	// machinery above because a habitual-train list belongs to the whole
+	// SettingsList, not to one Schedule being built or edited.
+	AwaitingUsualTrainNo bool
+
 	UpdatedAt time.Time
 }
 

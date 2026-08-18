@@ -137,6 +137,7 @@ func helpMessage(hasSchedules bool) string {
 		return "你還沒有設定任何通勤規則，用 /setup 建立第一條。\n\n" +
 			"/setup 建立一條新的通勤規則\n" +
 			"/manage 查看、修改或刪除現有規則\n" +
+			"/usualtrain 管理常搭班次\n" +
 			"/status 查看每條規則的狀態\n" +
 			"/cancel 取消進行中的操作\n" +
 			"/help 顯示這份說明"
@@ -144,6 +145,7 @@ func helpMessage(hasSchedules bool) string {
 	return "<b>指令</b>\n\n" +
 		"/setup 建立一條新的通勤規則\n" +
 		"/manage 查看、修改或刪除現有規則\n" +
+		"/usualtrain 管理常搭班次\n" +
 		"/status 查看每條規則的狀態\n" +
 		"/cancel 取消進行中的操作\n" +
 		"/help 顯示這份說明"

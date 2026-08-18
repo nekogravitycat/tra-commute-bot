@@ -37,10 +37,6 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.RetryWindow != 10*time.Minute {
 		t.Errorf("retry window = %v, want 10m", cfg.RetryWindow)
 	}
-	if got := cfg.UsualTrainNos; len(got) != 3 {
-		t.Errorf("usual train nos = %v, want 3 entries", got)
-	}
-
 	// The two train types that refuse electronic tickets must be excluded by
 	// ID: the type code cannot distinguish them, since 自強 alone spans two.
 	for _, id := range []string{"1101", "1107"} {
@@ -74,10 +70,7 @@ func TestLocalConfigMatchesExample(t *testing.T) {
 	}
 }
 
-const minimalConfig = `
-route:
-  usual_train_nos: []
-`
+const minimalConfig = `extra_dates: []`
 
 // TestDefaults checks every optional value has a sensible fallback, so a short
 // config is a valid one.
@@ -125,8 +118,6 @@ func TestSkipAndExtraDates(t *testing.T) {
 	cfg, err := Load(writeConfig(t, `
 skip_dates: ["2026-09-01"]
 extra_dates: ["2026-09-26"]
-route:
-  usual_train_nos: []
 `))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -149,8 +140,6 @@ func TestValidationErrors(t *testing.T) {
 			name: "bad skip date",
 			config: `
 skip_dates: ["tomorrow"]
-route:
-  usual_train_nos: []
 `,
 			wantError: "skip_dates",
 		},
@@ -158,8 +147,6 @@ route:
 			name: "bad extra date",
 			config: `
 extra_dates: ["tomorrow"]
-route:
-  usual_train_nos: []
 `,
 			wantError: "extra_dates",
 		},
@@ -167,7 +154,6 @@ route:
 			name: "bad policy",
 			config: `
 route:
-  usual_train_nos: []
   unknown_train_type_policy: "maybe"
 `,
 			wantError: "unknown_train_type_policy",
@@ -175,8 +161,6 @@ route:
 		{
 			name: "bad timezone",
 			config: `
-route:
-  usual_train_nos: []
 output:
   timezone: "Mars/Olympus_Mons"
 `,

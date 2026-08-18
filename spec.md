@@ -68,7 +68,7 @@
 | 278 | 自強(3000) | 08:55 | 09:27 | 32 分 | ✅ 站票 |
 
 > ✅ **已由 `probe-tdx.sh` 於 2026-08-18 實測校正**（TDX `DailyTrainTimetable/OD/1080/to/1000`，當日共 106 班次）。
-> 程式仍**不得硬編時刻**，一律以 API 當日時刻表為準；設定檔只硬編車次編號。上表僅供人工驗證測試案例之用。
+> 程式仍**不得硬編時刻**，一律以 API 當日時刻表為準；常搭班次的車次編號透過 `/usualtrain` 即時設定（§10.12），不寫在設定檔或程式碼裡。上表僅供人工驗證測試案例之用。
 
 
 
@@ -677,9 +677,11 @@ retry_window_minutes: 10              # 失敗後的重試視窗（§10.8 之延
 
 # 車種篩選（A13）：排除不接受電子票證的車種，與是否對號無關；
 # 自強、莒光可持悠遊卡搭乘站票，照常納入候選。所有 schedule 共用同一份規則。
+#
+# 常搭班次（usual_train_nos）不在這裡：它比這份檔案的其他旋鈕變動頻繁得多
+# （通勤習慣一改就要調），改用 /usualtrain 即時設定，存在 settings.json
+# （§10.8、§10.12），不需要重啟就生效。
 route:
-  usual_train_nos: ["2008", "1136", "1138"]  # 標記為「常搭」，不限制候選範圍；
-                                              # 若各 schedule 路線不同，此清單對不相關的路線無效
   lookback_minutes: 30                # 往前掃描（撈取因誤點而尚未發車的班次）
   lookahead_minutes: 60
   excluded_train_type_ids: ["1101", "1107"]   # 1101 太魯閣、1107 普悠瑪（已由 /TrainType 查證）
@@ -716,7 +718,7 @@ storage:
   archive_retain_days: 30
 ```
 
-> **`usual_train_nos` 與 `excluded_train_type_*` 目前仍是全域設定，即使 v0.2 已支援多路線。** 若使用者的多條 schedule 路線不同（例如上班、下班方向相反），這份共用清單對其中一條路線可能無意義（一個車次編號通常只在一個方向出現，不會誤判到另一條路線）。這是已知的簡化：v0.3 若要讓「常搭班次」隨路線分開設定，需要把這幾個欄位移進 §10.1 的 Schedule 結構，屆時再處理。目前保持全域是因為單一使用者同時維護的路線數量很小，重複設定的成本低於架構複雜度的成本。
+> **`usual_train_nos` 與 `excluded_train_type_*` 目前仍是全域設定，即使 v0.2 已支援多路線。** 若使用者的多條 schedule 路線不同（例如上班、下班方向相反），這份共用清單對其中一條路線可能無意義（一個車次編號通常只在一個方向出現，不會誤判到另一條路線）。這是已知的簡化：v0.3 若要讓「常搭班次」隨路線分開設定，需要把這幾個欄位移進 §10.1 的 Schedule 結構，屆時再處理。目前保持全域是因為單一使用者同時維護的路線數量很小，重複設定的成本低於架構複雜度的成本。`usual_train_nos` 額外多了一個理由留在全域：它現在存在 `settings.json`（§10.8），而不是任何一條 Schedule 底下，改起來才不需要先選「是哪一條規則的常搭班次」。
 
 憑證一律走環境變數，透過容器的 env file 或 `docker run -e` 傳入，**不寫進 `config.yaml`**：
 
@@ -936,6 +938,7 @@ v0.1 的排程規則寫在 `config.yaml`，改一次要編輯檔案；v0.2 起�
 |---|---|
 | `/setup` | 引導式建立**一條新的** Schedule，一次問完全部欄位，中途可 `/cancel` |
 | `/manage` | 列出目前所有 Schedule；選擇其中一條後，用選單編輯任一欄位或刪除整條 |
+| `/usualtrain` | 管理常搭班次（跨所有 Schedule 共用的全域清單，§10.12） |
 | `/status` | 列出所有 Schedule 目前的完整度與最近一次通知結果 |
 | `/help` | 列出以上指令與簡短說明 |
 | `/cancel` | 中止目前進行中的引導流程（`/setup` 或 `/manage` 的編輯子流程），不留任何變更 |
@@ -1078,9 +1081,12 @@ v0.1 的排程規則寫在 `config.yaml`，改一次要編輯檔案；v0.2 起�
       "deadline_at": "18:50",
       "max_early_leave_minutes": 10
     }
-  ]
+  ],
+  "usual_train_nos": ["2008", "1136", "1138"]
 }
 ```
+
+`usual_train_nos`（§2.2、§8、§10.12）跟 `schedules` 平行，不屬於任何一條 Schedule：它是全域、跨所有 Schedule 共用的清單，透過 `/usualtrain` 增刪，跟每條 Schedule 各自的欄位分開儲存。
 
 `state.json`（tick guard 狀態）沿用 v0.1 的鍵值結構，但鍵改為 Schedule 的 `name`（使用者自訂，取代原本設定檔裡的固定排程名），語意不變：
 
@@ -1200,6 +1206,23 @@ tracommute [flags]
 
 `-dry-run` 模式下，指令迴圈（`getUpdates`）不啟動——`-dry-run` 的目的是驗證通知內容，不涉及即時設定的互動測試。
 
+### 10.12 `/usualtrain`：管理常搭班次
+
+常搭班次（§2.2、§8）標記哪些車次即使被排序擠出候選名單，也一定要出現在通知裡——這是「常搭班次已過站/已誤點」屬於使用者需要知道的資訊，不是雜訊。這份清單原本寫在 `config.yaml` 的 `route.usual_train_nos`，改一次要編輯檔案再重啟容器；v0.2 尾聲比照 §10 其餘欄位，改為透過 Telegram 指令即時設定，存進 `settings.json`（§10.8）而非任何一條 Schedule 底下——這份清單是全域的，跨所有 Schedule 共用（§8 附註）。
+
+**互動走選單，不走參數**：跟 `/setup`／`/manage`（§10.2 原則 3）同樣的理由，`/usualtrain` 不要求記語法，而是列出目前清單、按鈕逐項刪除，外加一個「新增」按鈕觸發一次性的文字輸入：
+
+```
+/usualtrain
+  → 列出目前的常搭班次，每個車次一顆「🗑 <車次>」按鈕
+  → 「➕ 新增常搭班次」：提示輸入車次編號（純數字），驗證後寫入
+  → 「✅ 完成」：結束，回一句提示語，不留進行中的狀態
+```
+
+新增時的驗證只檢查「像不像車次編號」（純數字、長度合理），不查詢 TDX 確認車次是否存在——常搭班次本來就可能是使用者記錯或未來才會恢復的車次，程式不擅自幫使用者判斷這件事是否有意義（§7.8 之後同一個設計原則：系統提供操作，不替使用者做價值判斷）。清單沒有筆數上限。
+
+新增與刪除都直接生效，不像 `/manage` 刪除一條 Schedule 那樣需要二次確認——移除一個車次編號的代價很低（按「➕ 新增」打字打回來就好），跟刪除一整條 Schedule（連同它的通知排程與 tick guard 歷史）不對等。
+
 ---
 
 ## 11. 測試策略
@@ -1283,7 +1306,7 @@ tracommute [flags]
 | v0.2 | 政府行事曆整合 | 目前補班日以全域 `extra_dates` 手動維護，可改為自動判定 |
 | v0.3 | 二次查詢 | 通知後再推一次更新，抓取離發車更近的誤點（此時需實作 token 快取） |
 | v0.3 | 高鐵備案 | 全線大誤點時，計算高鐵方案 |
-| v0.3 | 每條 Schedule 各自的常搭班次／車種篩選 | 目前 `usual_train_nos` 與車種篩選仍是全域設定（見 §8 附註），多路線情境下宜下放到 Schedule 層級 |
+| v0.3 | 每條 Schedule 各自的常搭班次／車種篩選 | `usual_train_nos`（已透過 `/usualtrain` 即時設定，§10.12）與車種篩選（仍在 `config.yaml`）目前都是全域設定（見 §8 附註），多路線情境下宜下放到 Schedule 層級 |
 | v0.4 | 誤點統計 | 累積數月資料，回答「哪班車最常誤點」，據此調整常搭班次 |
 
 ---
@@ -1346,3 +1369,4 @@ tracommute [flags]
 | 2026-08-18 | **v0.2 方向定案：即時 Telegram 設定介面取代設定檔排程，長駐行程取代 systemd timer**。新增 §1.3 界定系統邊界僅止於台鐵車站，**移除 A5（`last_mile_minutes`／打卡截止）**，`T_deadline` 改為「抵達目的地車站」；A4／A8／A12 依此修訂，新增 A14（即時設定與全域設定的分界）；重寫 §7.1／§7.4／§7.7 的公式與情境數字；重寫 §8 為全域校正參數（移除 `schedules`／`timing`／`clock_in_deadline`／`last_mile_minutes`／`max_early_leave_minutes`，改為 `extra_dates` 等）；重寫 §4.2／§4.3／§5 為 Docker + 長駐雙迴圈架構（通知迴圈 `time.Ticker`、指令迴圈 `getUpdates` 長輪詢）；新增 §10 完整定義 Schedule 模型、`/setup` `/manage` `/route` `/ready` `/deadline` `/schedule` `/earlyleave` `/status` `/help` 指令、`settings.json`／`state.json` 新結構、以及單一 goroutine + channel 序列化 `SettingsStore` 存取的併發規則（§10.7）；改寫 §12 實作順序、§13 後續版本規劃。**本次僅定案設計，`internal/command` 尚未實作**，程式碼現況仍是單一（非清單）的 `domain.Settings` |
 | 2026-08-18 | **v0.2 實作完成**：`domain.Settings` 改為 `SettingsList`（§10.1）；`DecideTick` 改為 `DecideTicks`，每條 Schedule 各自獨立判斷，同一分鐘可有多條同時命中；新增 `usecase.SettingsActor`（單一 goroutine + channel 序列化，§10.9）；`cmd/tracommute` 改為長駐雙迴圈（`time.Ticker` 通知迴圈 + `getUpdates` 長輪詢指令迴圈），`-at`／`-dry-run`／`-force` 保留為單次模擬執行的除錯路徑；新增 `internal/command`（`router.go`／`setup.go`／`manage.go`／`flows.go`／`keyboard.go`），完整實作 `/setup` `/manage` `/status` `/help` `/cancel` 與 §10.4 四段共用子流程；新增 `internal/adapter/telegram` 的 `getUpdates`／`sendMessage`（含 inline keyboard）／`editMessageReplyMarkup`／`answerCallbackQuery`；新增 `cmd/gen-stations` 以 TDX `/Station` 一次性產生 `internal/domain/stations_data.go`（245 站），供 `/setup` 選站子流程比對，正式執行不再呼叫 `/Station`；部署改為 Docker（`Dockerfile`／`docker-compose.yml`），移除 v0.1 的 systemd timer 部署檔案；CI 的 release job 改為建置並推送 Docker image 至 GHCR |
 | 2026-08-18 | **指令介面收斂為僅 `/setup` 與 `/manage`**：移除 `/route` `/ready` `/deadline` `/schedule` `/earlyleave` 五個欄位層級指令（尚未上線，不保留相容）。改寫 §10.2–10.7：新增三個不變式（Schedule 只有「不存在」與「完整」兩態、編輯複用建立時的子流程、每個畫面按鈕收尾）；新增 §10.4 四段共用子流程（選站／選時刻／選星期／選分鐘數）供 `/setup` 與 `/manage` 共用；`/manage` 新增「➕ 新增一條規則」捷徑與逐欄編輯選單；新增 §10.7 操作體驗補強建議（建立後選單、錯誤訊息具體化、取消要明確告知未儲存、編輯後對照新舊值、`/help` 依是否已有 Schedule 給不同文案等七點）。原 §10.6／§10.7（儲存、併發存取）依序遞補為 §10.8／§10.9，目錄結構（§10.10）與 CLI 旗標（§10.9→§10.11）隨之調整，並同步修正全文交叉引用 |
+| 2026-08-18 | **新增 `/usualtrain`：常搭班次改為即時設定**（§10.12）。`usual_train_nos` 從 `config.yaml` 的 `route` 區塊移出，改存進 `settings.json`（§10.8）一個與 `schedules` 平行的全域欄位，透過選單按鈕增刪、不需重啟即可生效；設計上維持全域（跨 Schedule 共用），與 §8 附註、§13 v0.3 規劃一致，尚未下放到個別 Schedule。`domain.SettingsList` 新增 `AddUsualTrain`／`RemoveUsualTrain`，`Upsert`／`Remove` 一併修正為保留這個欄位（原本會被 `/setup` 或 `/manage` 的寫入意外清空）；`usecase.Brief.Run` 的 `usualTrainNos` 改為逐次呼叫時傳入，而非固定在啟動時讀入的 `BriefSettings` |

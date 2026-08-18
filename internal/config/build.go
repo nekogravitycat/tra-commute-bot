@@ -65,8 +65,6 @@ func (f File) Build() (Config, error) {
 	c.Tolerance = minutesOr(f.TickToleranceMinutes, defaultTolerance)
 	c.RetryWindow = minutesOr(f.RetryWindowMinutes, defaultRetryWindow)
 
-	c.UsualTrainNos = f.Route.UsualTrainNos
-
 	c.Board = minutesOr(f.Constraints.BoardingBufferMinutes, defaultBoardBuffer)
 	c.RiskMargin = minutesOr(f.Constraints.RiskMarginMinutes, defaultRiskMargin)
 

@@ -48,6 +48,7 @@ func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state useca
 var botCommands = []telegram.BotCommand{
 	{Command: "setup", Description: "建立一條新的通勤規則"},
 	{Command: "manage", Description: "查看、修改或刪除現有規則"},
+	{Command: "usualtrain", Description: "管理常搭班次"},
 	{Command: "status", Description: "查看每條規則的狀態"},
 	{Command: "cancel", Description: "取消進行中的操作"},
 	{Command: "help", Description: "顯示這份說明"},
@@ -105,6 +106,9 @@ func (r *Router) handleMessage(ctx context.Context, msg telegram.Message) {
 	case "/manage":
 		r.startManage(ctx, msg.Chat.ID, now)
 		return
+	case "/usualtrain":
+		r.startUsualTrain(ctx, msg.Chat.ID)
+		return
 	case "/status":
 		r.handleStatus(ctx, msg.Chat.ID)
 		return
@@ -123,6 +127,11 @@ func (r *Router) handleMessage(ctx context.Context, msg telegram.Message) {
 	if sess.stale(now) {
 		r.clearSession(msg.Chat.ID)
 		r.send(ctx, "請用 /setup 或 /manage 開始，或輸入 /help 查看指令")
+		return
+	}
+	if sess.AwaitingUsualTrainNo {
+		sess.UpdatedAt = now
+		r.handleUsualTrainText(ctx, sess, text)
 		return
 	}
 	if _, ok := sess.currentField(); !ok {
@@ -147,6 +156,9 @@ func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) 
 	switch {
 	case strings.HasPrefix(data, "after:"):
 		r.handleAfterCallback(ctx, chatID, cq)
+		return
+	case strings.HasPrefix(data, "ut:"):
+		r.handleUsualTrainCallback(ctx, chatID, cq)
 		return
 	case data == cbManageNew:
 		r.answer(ctx, cq.ID, "")

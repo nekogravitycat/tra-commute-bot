@@ -142,6 +142,11 @@ func svc(no, typeID, typeName, dep, arr string) domain.Service {
 	}
 }
 
+// testUsualTrainNos is the usualTrainNos argument brief_test.go's call sites
+// pass to Run — Tick.Run's real equivalent of SettingsList.UsualTrainNos,
+// read fresh alongside trip on every tick rather than fixed in BriefSettings.
+func testUsualTrainNos() []string { return []string{"2008", "1136", "1138"} }
+
 func usualServices() []domain.Service {
 	return []domain.Service{
 		svc("1136", "1131", "區間", "08:16", "08:57"),
@@ -160,7 +165,6 @@ func testSettings() BriefSettings {
 			KnownKeywords: []string{"區間快", "區間", "自強", "莒光"},
 			Policy:        domain.IncludeAndFlag,
 		},
-		UsualTrainNos:       []string{"2008", "1136", "1138"},
 		CertificateEnabled:  true,
 		CertificateMinDelay: 5 * time.Minute,
 		CompensationEnabled: true,

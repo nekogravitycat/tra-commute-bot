@@ -29,10 +29,13 @@ func TestRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	s := New(path)
 
-	want := domain.SettingsList{Schedules: []domain.Settings{
-		fullSchedule("上班通勤"),
-		fullSchedule("下班通勤"),
-	}}
+	want := domain.SettingsList{
+		Schedules: []domain.Settings{
+			fullSchedule("上班通勤"),
+			fullSchedule("下班通勤"),
+		},
+		UsualTrainNos: []string{"2008", "1136", "1138"},
+	}
 	if err := s.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}

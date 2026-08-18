@@ -132,7 +132,7 @@ func (t *Tick) Run(ctx context.Context) (TickResult, error) {
 		// happened, otherwise the retry window never starts counting.
 		t.recordAttempt(&state, d, now)
 
-		res, err := t.Brief.Run(ctx, d.FiredAt, d.Schedule.Name, trip)
+		res, err := t.Brief.Run(ctx, d.FiredAt, d.Schedule.Name, trip, list.UsualTrainNos)
 		out.Outcomes = append(out.Outcomes, TickOutcome{Decision: d, Result: res})
 		if err != nil {
 			errs = append(errs, err)

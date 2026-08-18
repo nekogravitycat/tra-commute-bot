@@ -10,7 +10,6 @@ tick_tolerance_minutes: 2
 retry_window_minutes: 10
 
 route:
-  usual_train_nos: ["2008", "1136", "1138"]
   lookback_minutes: 30
   lookahead_minutes: 60
   excluded_train_type_ids: ["1101", "1107"]

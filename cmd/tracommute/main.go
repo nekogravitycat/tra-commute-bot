@@ -224,7 +224,6 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 			RiskMargin:          cfg.RiskMargin,
 			Window:              cfg.Window,
 			Filter:              cfg.Filter,
-			UsualTrainNos:       cfg.UsualTrainNos,
 			CertificateEnabled:  cfg.CertificateEnabled,
 			CertificateMinDelay: cfg.CertificateMinDelay,
 			CompensationEnabled: cfg.CompensationEnabled,
@@ -310,7 +309,7 @@ func (a *application) forceRun(ctx context.Context, now time.Time, o options, lo
 	firedAt := sch.At.On(now)
 	log.Info("forced run", "schedule", sch.Name, "fired_at", firedAt)
 
-	res, err := a.brief.Run(ctx, firedAt, sch.Name, trip)
+	res, err := a.brief.Run(ctx, firedAt, sch.Name, trip, list.UsualTrainNos)
 	if err != nil {
 		return err
 	}

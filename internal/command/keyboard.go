@@ -35,6 +35,10 @@ const (
 	cbDelete       = "mng:delete"
 	cbDeleteYes    = "mng:delete:yes"
 	cbDeleteNo     = "mng:delete:no"
+
+	cbUsualTrainAdd  = "ut:add"  // prompts for a train number as free text
+	cbUsualTrainDel  = "ut:del:" // ut:del:<train no>
+	cbUsualTrainDone = "ut:done"
 )
 
 // weekdayOrder is the button layout order for subflow C (§10.4-C): 一 to 日.
@@ -156,4 +160,20 @@ func deleteConfirmKeyboard() telegram.InlineKeyboardMarkup {
 	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
 		row(btn("確認刪除", cbDeleteYes), btn("取消", cbDeleteNo)),
 	}}
+}
+
+// usualTrainKeyboard lists every habitual train number as its own delete
+// button — tapping one removes just that number — plus the add and done
+// shortcuts. One row per train keeps a long number never truncated, the same
+// reasoning as stationKeyboard.
+func usualTrainKeyboard(nos []string) telegram.InlineKeyboardMarkup {
+	m := telegram.InlineKeyboardMarkup{}
+	for _, no := range nos {
+		m.InlineKeyboard = append(m.InlineKeyboard, row(btn("🗑 "+no, cbUsualTrainDel+no)))
+	}
+	m.InlineKeyboard = append(m.InlineKeyboard,
+		row(btn("➕ 新增常搭班次", cbUsualTrainAdd)),
+		row(btn("✅ 完成", cbUsualTrainDone)),
+	)
+	return m
 }

@@ -29,9 +29,12 @@ func New(path string) *Store { return &Store{Path: path} }
 
 // wireList is settings.json's on-disk shape (§10.8): a list under
 // "schedules", rather than v0.1's single object, so /setup can add a second
-// Schedule without the file's shape changing.
+// Schedule without the file's shape changing. usual_train_nos sits alongside
+// it rather than inside any one Schedule, since it is shared by all of them
+// (§8, §10.1) and set live via /usualtrain rather than config.yaml.
 type wireList struct {
-	Schedules []wireSchedule `json:"schedules"`
+	Schedules     []wireSchedule `json:"schedules"`
+	UsualTrainNos []string       `json:"usual_train_nos"`
 }
 
 // wireSchedule is one Schedule. Weekdays and clock times are written as text
@@ -67,7 +70,10 @@ func (s *Store) Load() (domain.SettingsList, error) {
 		return domain.SettingsList{}, fmt.Errorf("decode settings: %w", err)
 	}
 
-	list := domain.SettingsList{Schedules: make([]domain.Settings, 0, len(w.Schedules))}
+	list := domain.SettingsList{
+		Schedules:     make([]domain.Settings, 0, len(w.Schedules)),
+		UsualTrainNos: w.UsualTrainNos,
+	}
 	for _, ws := range w.Schedules {
 		set, err := ws.toDomain()
 		if err != nil {
@@ -151,7 +157,10 @@ func fromDomain(set domain.Settings) wireSchedule {
 // make every tick for the rest of the day read garbage, and Telegram
 // commands can arrive at any moment, not just at a quiet time of day.
 func (s *Store) Save(list domain.SettingsList) error {
-	w := wireList{Schedules: make([]wireSchedule, 0, len(list.Schedules))}
+	w := wireList{
+		Schedules:     make([]wireSchedule, 0, len(list.Schedules)),
+		UsualTrainNos: list.UsualTrainNos,
+	}
 	for _, set := range list.Schedules {
 		w.Schedules = append(w.Schedules, fromDomain(set))
 	}

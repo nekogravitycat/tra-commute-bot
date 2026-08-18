@@ -24,6 +24,13 @@ func TestMatchStationsExactName(t *testing.T) {
 	}
 }
 
+func TestMatchStationsTaiVariant(t *testing.T) {
+	got := MatchStations(testStations, "台北")
+	if len(got) == 0 || got[0].ID != "1000" {
+		t.Fatalf("got %+v, want 臺北 ranked first for 台北 query", got)
+	}
+}
+
 func TestMatchStationsEnglishCaseInsensitive(t *testing.T) {
 	got := MatchStations(testStations, "taipei")
 	if len(got) == 0 || got[0].ID != "1000" {

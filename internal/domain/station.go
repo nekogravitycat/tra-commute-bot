@@ -31,6 +31,7 @@ func MatchStations(stations []Station, query string) []Station {
 	if q == "" {
 		return nil
 	}
+	qZh := normalizeZh(q)
 	qLower := strings.ToLower(q)
 
 	var exact, starts, contains []Station
@@ -38,13 +39,13 @@ func MatchStations(stations []Station, query string) []Station {
 		if s.ID == q {
 			return []Station{s}
 		}
-		zh, en := s.NameZh, strings.ToLower(s.NameEn)
+		zh, en := normalizeZh(s.NameZh), strings.ToLower(s.NameEn)
 		switch {
-		case zh == q || en == qLower:
+		case zh == qZh || en == qLower:
 			exact = append(exact, s)
-		case strings.HasPrefix(zh, q) || strings.HasPrefix(en, qLower):
+		case strings.HasPrefix(zh, qZh) || strings.HasPrefix(en, qLower):
 			starts = append(starts, s)
-		case strings.Contains(zh, q) || strings.Contains(en, qLower):
+		case strings.Contains(zh, qZh) || strings.Contains(en, qLower):
 			contains = append(contains, s)
 		}
 	}
@@ -54,4 +55,15 @@ func MatchStations(stations []Station, query string) []Station {
 	out = append(out, starts...)
 	out = append(out, contains...)
 	return out
+}
+
+// zhVariants normalizes interchangeable Traditional Chinese character variants
+// so a query typed with the common form still matches TRA's official name.
+// TDX's /Station catalog spells every "Tai" station with 臺 (e.g. 臺北,
+// 臺中, 臺南, 臺東), but 台 is the form most people actually type — they're
+// the same word, and users shouldn't have to know which glyph TRA prefers.
+var zhVariants = strings.NewReplacer("台", "臺")
+
+func normalizeZh(s string) string {
+	return zhVariants.Replace(s)
 }

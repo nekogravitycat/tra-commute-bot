@@ -1,0 +1,314 @@
+{
+ "UpdateTime": "2026-08-17T07:30:32+08:00",
+ "UpdateInterval": 14400,
+ "SrcUpdateTime": "2026-08-16T18:17:41+08:00",
+ "SrcUpdateInterval": -1,
+ "TrainDate": "2026-08-18",
+ "TrainTimetables": [
+  {
+   "TrainInfo": {
+    "TrainNo": "1136",
+    "RouteID": "",
+    "Direction": 0,
+    "TrainTypeID": "1131",
+    "TrainTypeCode": "6",
+    "TrainTypeName": {
+     "Zh_tw": "區間",
+     "En": "Local Train"
+    },
+    "TripHeadSign": "往瑞芳",
+    "StartingStationID": "1150",
+    "StartingStationName": {
+     "Zh_tw": "北湖",
+     "En": "Beihu"
+    },
+    "EndingStationID": "7360",
+    "EndingStationName": {
+     "Zh_tw": "瑞芳",
+     "En": "Ruifang"
+    },
+    "OverNightStationID": "",
+    "TripLine": 0,
+    "WheelChairFlag": 0,
+    "PackageServiceFlag": 0,
+    "DiningFlag": 0,
+    "BreastFeedFlag": 0,
+    "BikeFlag": 0,
+    "CarFlag": 0,
+    "DailyFlag": 1,
+    "ExtraTrainFlag": 0,
+    "SuspendedFlag": 0,
+    "ServiceType": 1,
+    "Note": "每日行駛。"
+   },
+   "StopTimes": [
+    {
+     "StopSequence": 8,
+     "StationID": "1080",
+     "StationName": {
+      "Zh_tw": "桃園",
+      "En": "Taoyuan"
+     },
+     "ArrivalTime": "08:14",
+     "DepartureTime": "08:16",
+     "SuspendedFlag": 0
+    },
+    {
+     "StopSequence": 17,
+     "StationID": "1000",
+     "StationName": {
+      "Zh_tw": "臺北",
+      "En": "Taipei"
+     },
+     "ArrivalTime": "08:57",
+     "DepartureTime": "08:59",
+     "SuspendedFlag": 0
+    }
+   ]
+  },
+  {
+   "TrainInfo": {
+    "TrainNo": "1138",
+    "RouteID": "",
+    "Direction": 0,
+    "TrainTypeID": "1131",
+    "TrainTypeCode": "6",
+    "TrainTypeName": {
+     "Zh_tw": "區間",
+     "En": "Local Train"
+    },
+    "TripHeadSign": "往基隆",
+    "StartingStationID": "3190",
+    "StartingStationName": {
+     "Zh_tw": "三義",
+     "En": "Sanyi"
+    },
+    "EndingStationID": "0900",
+    "EndingStationName": {
+     "Zh_tw": "基隆",
+     "En": "Keelung"
+    },
+    "OverNightStationID": "",
+    "TripLine": 1,
+    "WheelChairFlag": 0,
+    "PackageServiceFlag": 0,
+    "DiningFlag": 0,
+    "BreastFeedFlag": 0,
+    "BikeFlag": 1,
+    "CarFlag": 0,
+    "DailyFlag": 1,
+    "ExtraTrainFlag": 0,
+    "SuspendedFlag": 0,
+    "ServiceType": 1,
+    "Note": "每日行駛。"
+   },
+   "StopTimes": [
+    {
+     "StopSequence": 23,
+     "StationID": "1080",
+     "StationName": {
+      "Zh_tw": "桃園",
+      "En": "Taoyuan"
+     },
+     "ArrivalTime": "08:32",
+     "DepartureTime": "08:34",
+     "SuspendedFlag": 0
+    },
+    {
+     "StopSequence": 32,
+     "StationID": "1000",
+     "StationName": {
+      "Zh_tw": "臺北",
+      "En": "Taipei"
+     },
+     "ArrivalTime": "09:14",
+     "DepartureTime": "09:16",
+     "SuspendedFlag": 0
+    }
+   ]
+  },
+  {
+   "TrainInfo": {
+    "TrainNo": "2008",
+    "RouteID": "",
+    "Direction": 0,
+    "TrainTypeID": "1132",
+    "TrainTypeCode": "10",
+    "TrainTypeName": {
+     "Zh_tw": "區間快",
+     "En": "Fast Local Train"
+    },
+    "TripHeadSign": "往基隆",
+    "StartingStationID": "3360",
+    "StartingStationName": {
+     "Zh_tw": "彰化",
+     "En": "Changhua"
+    },
+    "EndingStationID": "0900",
+    "EndingStationName": {
+     "Zh_tw": "基隆",
+     "En": "Keelung"
+    },
+    "OverNightStationID": "",
+    "TripLine": 2,
+    "WheelChairFlag": 0,
+    "PackageServiceFlag": 0,
+    "DiningFlag": 0,
+    "BreastFeedFlag": 0,
+    "BikeFlag": 1,
+    "CarFlag": 0,
+    "DailyFlag": 1,
+    "ExtraTrainFlag": 0,
+    "SuspendedFlag": 0,
+    "ServiceType": 1,
+    "Note": "每日行駛。"
+   },
+   "StopTimes": [
+    {
+     "StopSequence": 18,
+     "StationID": "1080",
+     "StationName": {
+      "Zh_tw": "桃園",
+      "En": "Taoyuan"
+     },
+     "ArrivalTime": "08:24",
+     "DepartureTime": "08:26",
+     "SuspendedFlag": 0
+    },
+    {
+     "StopSequence": 23,
+     "StationID": "1000",
+     "StationName": {
+      "Zh_tw": "臺北",
+      "En": "Taipei"
+     },
+     "ArrivalTime": "09:02",
+     "DepartureTime": "09:05",
+     "SuspendedFlag": 0
+    }
+   ]
+  },
+  {
+   "TrainInfo": {
+    "TrainNo": "272",
+    "RouteID": "",
+    "Direction": 0,
+    "TrainTypeID": "1108",
+    "TrainTypeCode": "3",
+    "TrainTypeName": {
+     "Zh_tw": "自強(推拉式自強號且無自行車車廂)",
+     "En": "Tze-Chiang Express"
+    },
+    "TripHeadSign": "往花蓮",
+    "StartingStationID": "3160",
+    "StartingStationName": {
+     "Zh_tw": "苗栗",
+     "En": "Miaoli"
+    },
+    "EndingStationID": "7000",
+    "EndingStationName": {
+     "Zh_tw": "花蓮",
+     "En": "Hualien"
+    },
+    "OverNightStationID": "",
+    "TripLine": 1,
+    "WheelChairFlag": 1,
+    "PackageServiceFlag": 0,
+    "DiningFlag": 0,
+    "BreastFeedFlag": 1,
+    "BikeFlag": 0,
+    "CarFlag": 0,
+    "DailyFlag": 1,
+    "ExtraTrainFlag": 0,
+    "SuspendedFlag": 0,
+    "ServiceType": 1,
+    "Note": "每日行駛。"
+   },
+   "StopTimes": [
+    {
+     "StopSequence": 8,
+     "StationID": "1080",
+     "StationName": {
+      "Zh_tw": "桃園",
+      "En": "Taoyuan"
+     },
+     "ArrivalTime": "06:41",
+     "DepartureTime": "06:43",
+     "SuspendedFlag": 0
+    },
+    {
+     "StopSequence": 12,
+     "StationID": "1000",
+     "StationName": {
+      "Zh_tw": "臺北",
+      "En": "Taipei"
+     },
+     "ArrivalTime": "07:20",
+     "DepartureTime": "07:24",
+     "SuspendedFlag": 0
+    }
+   ]
+  },
+  {
+   "TrainInfo": {
+    "TrainNo": "278",
+    "RouteID": "",
+    "Direction": 0,
+    "TrainTypeID": "110G",
+    "TrainTypeCode": "11",
+    "TrainTypeName": {
+     "Zh_tw": "自強(3000)(EMU3000 型電車)",
+     "En": "Tze-Chiang 3000 Express "
+    },
+    "TripHeadSign": "往花蓮",
+    "StartingStationID": "3360",
+    "StartingStationName": {
+     "Zh_tw": "彰化",
+     "En": "Changhua"
+    },
+    "EndingStationID": "7000",
+    "EndingStationName": {
+     "Zh_tw": "花蓮",
+     "En": "Hualien"
+    },
+    "OverNightStationID": "",
+    "TripLine": 2,
+    "WheelChairFlag": 1,
+    "PackageServiceFlag": 0,
+    "DiningFlag": 0,
+    "BreastFeedFlag": 1,
+    "BikeFlag": 0,
+    "CarFlag": 0,
+    "DailyFlag": 1,
+    "ExtraTrainFlag": 0,
+    "SuspendedFlag": 0,
+    "ServiceType": 1,
+    "Note": "每日行駛。本列次不發售無座票，非持本班次車票旅客，請勿搭乘。 第6節為騰雲座艙，為本公司公告指定不發售無座位車票之車廂，持當日當次騰雲座艙車票旅客始可搭乘。"
+   },
+   "StopTimes": [
+    {
+     "StopSequence": 11,
+     "StationID": "1080",
+     "StationName": {
+      "Zh_tw": "桃園",
+      "En": "Taoyuan"
+     },
+     "ArrivalTime": "08:53",
+     "DepartureTime": "08:55",
+     "SuspendedFlag": 0
+    },
+    {
+     "StopSequence": 14,
+     "StationID": "1000",
+     "StationName": {
+      "Zh_tw": "臺北",
+      "En": "Taipei"
+     },
+     "ArrivalTime": "09:27",
+     "DepartureTime": "09:30",
+     "SuspendedFlag": 0
+    }
+   ]
+  }
+ ]
+}

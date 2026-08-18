@@ -1,0 +1,53 @@
+{
+ "UpdateTime": "2026-08-18T07:49:53+08:00",
+ "UpdateInterval": 30,
+ "SrcUpdateTime": "2026-08-18T07:49:40+08:00",
+ "SrcUpdateInterval": 30,
+ "AuthorityCode": "TRA",
+ "TrainLiveBoards": [
+  {
+   "TrainNo": "1136",
+   "TrainTypeID": "1131",
+   "TrainTypeCode": "6",
+   "TrainTypeName": { "Zh_tw": "區間", "En": "Local Train" },
+   "StationID": "1090",
+   "StationName": { "Zh_tw": "內壢", "En": "Neili" },
+   "TrainStationStatus": 2,
+   "DelayTime": 8,
+   "UpdateTime": "2026-08-18T07:49:40+08:00"
+  },
+  {
+   "TrainNo": "2008",
+   "TrainTypeID": "1132",
+   "TrainTypeCode": "10",
+   "TrainTypeName": { "Zh_tw": "區間快", "En": "Fast Local Train" },
+   "StationID": "1110",
+   "StationName": { "Zh_tw": "楊梅", "En": "Yangmei" },
+   "TrainStationStatus": 2,
+   "DelayTime": 24,
+   "UpdateTime": "2026-08-18T07:49:40+08:00"
+  },
+  {
+   "TrainNo": "1138",
+   "TrainTypeID": "1131",
+   "TrainTypeCode": "6",
+   "TrainTypeName": { "Zh_tw": "區間", "En": "Local Train" },
+   "StationID": "1150",
+   "StationName": { "Zh_tw": "北湖", "En": "Beihu" },
+   "TrainStationStatus": 2,
+   "DelayTime": 2,
+   "UpdateTime": "2026-08-18T07:49:40+08:00"
+  },
+  {
+   "TrainNo": "278",
+   "TrainTypeID": "110G",
+   "TrainTypeCode": "11",
+   "TrainTypeName": { "Zh_tw": "自強(3000)(EMU3000 型電車)", "En": "Tze-Chiang 3000 Express " },
+   "StationID": "3360",
+   "StationName": { "Zh_tw": "彰化", "En": "Changhua" },
+   "TrainStationStatus": 2,
+   "DelayTime": -3,
+   "UpdateTime": "2026-08-18T07:49:40+08:00"
+  }
+ ]
+}

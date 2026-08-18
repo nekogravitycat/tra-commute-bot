@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: gofmt
+        # gofmt exits zero even when it has complaints, so the output is what
+        # has to be checked.
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: coverage gate
+        # internal/domain holds the logic that decides which train to catch, so
+        # a drop in its coverage is the one worth failing the build over. The
+        # statement percentage comes from the package's own run rather than
+        # from averaging per-function figures, which would weight a one-line
+        # accessor the same as the ranking itself.
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          domain=$(go test -cover ./internal/domain/ \
+            | sed -n 's/.*coverage: \([0-9.]*\)% of statements.*/\1/p')
+          echo "internal/domain coverage: ${domain}%"
+          awk -v c="$domain" 'BEGIN { exit (c >= 90) ? 0 : 1 }' || {
+            echo "internal/domain coverage ${domain}% is below the 90% gate" >&2
+            exit 1
+          }
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: build
+        # CGO_ENABLED=0 gives a static binary that needs nothing on the host —
+        # not even tzdata, which is embedded in the program itself.
+        env:
+          CGO_ENABLED: "0"
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o tracommute ./cmd/tracommute
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: tracommute

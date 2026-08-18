@@ -1,0 +1,90 @@
+# tra-commute-bot configuration
+#
+# Deployed at /etc/tra-commute/config.yaml, mode 0644. It holds no credentials,
+# so it is safe to keep readable and in version control.
+#
+# Edits take effect on the next tick: no sudo, no daemon-reload, no restart.
+# The every-minute timer re-reads this file each time it wakes.
+
+# ── Schedule ──────────────────────────────────────────────────────
+# The systemd timer fires every minute; the program decides whether this
+# particular minute is the scheduled one.
+schedules:
+  - name: "平日通勤"
+    weekdays: [Mon, Tue, Wed, Thu, Fri]
+    at: "07:50"
+  # Make-up workdays are listed by hand rather than read from a government
+  # calendar feed.
+  # - name: "補班日"
+  #   dates: ["2026-09-26", "2026-12-19"]
+  #   at: "07:50"
+
+skip_dates: []              # leave, public holidays, business trips
+
+tick_tolerance_minutes: 2   # a first attempt is accepted within [at, at+2]
+retry_window_minutes: 10    # retry every minute until [at, at+10], then send
+                            # the degraded notice and stop for the day
+
+timing:
+  ready_lead_minutes: 30    # T_ready = at + 30: when you can be at the origin
+
+# v0.1 plans a single leg. v0.2 turns this into a list of journeys, with each
+# schedule able to name one; entries without a journey keep using the default,
+# so this structure will not become a breaking change.
+route:
+  origin_station_id: "1080"           # 桃園
+  origin_name: "桃園"
+  destination_station_id: "1000"      # 臺北
+  destination_name: "臺北"
+  usual_train_nos: ["2008", "1136", "1138"]   # marked as habitual; does not
+                                              # restrict the candidate set
+  lookback_minutes: 30      # reach backwards for trains whose scheduled
+                            # departure has passed but which are running late
+  lookahead_minutes: 60
+
+  # The filter is about electronic ticket acceptance, not reserved seating.
+  # 自強 and 莒光 take a standing ticket on a stored value card and stay in;
+  # 普悠瑪 and 太魯閣 do not accept electronic tickets at all.
+  #
+  # Match on TrainTypeID: TrainTypeCode cannot tell these apart, because 自強
+  # alone spans codes 3 and 11.
+  excluded_train_type_ids: ["1101", "1107"]   # 1101 太魯閣, 1107 普悠瑪
+  excluded_train_type_keywords: ["普悠瑪", "太魯閣"]   # defensive fallback,
+                                                      # in case the IDs change
+  # A type matching none of the names below counts as unknown and is handled
+  # by unknown_train_type_policy.
+  known_train_type_keywords: ["區間快", "區間", "自強", "莒光", "復興", "普快"]
+  unknown_train_type_policy: "include_and_flag"   # include_and_flag | exclude
+
+constraints:
+  clock_in_deadline: "09:30"
+  last_mile_minutes: 20     # destination station to clocking in (metro + walk)
+  boarding_buffer_minutes: 2
+  risk_margin_minutes: 3    # below this much slack a train is "risky" and is
+                            # offered but never recommended
+
+certificate:                # delay certificates
+  enabled: true
+  min_delay_minutes: 5      # below this, a trip to the counter is not worth it
+  note: "臺北站櫃檯人工申請"
+
+compensation:               # the only lever offered is leaving earlier
+  enabled: true
+  max_early_leave_minutes: 15
+  severe_delay_threshold: 30   # past this the message escalates
+
+api:
+  request_interval_ms: 1500 # minimum gap between sequential requests; TDX
+                            # starts returning 429 after roughly eight rapid
+                            # calls, and this flow only makes three
+  timeout_seconds: 15
+
+output:
+  max_alternatives: 4
+  timezone: "Asia/Taipei"
+
+storage:
+  state_path: "/var/lib/tra-commute/state.json"
+  archive_dir: "/var/lib/tra-commute/dumps"
+  archive_retain_days: 30   # the only evidence left when a recommendation
+                            # turns out to have been wrong

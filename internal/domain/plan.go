@@ -125,7 +125,6 @@ func newCandidate(svc Service, in PlanInput, usual, unknown bool) Candidate {
 	c.EstDep = svc.SchedDep.Add(c.Delay)
 	c.EstArr = svc.SchedArr.Add(c.Delay)
 	c.Catchability = Classify(c.EstDep, in.Params)
-	c.ClockIn = in.Params.ClockInFor(c.EstArr)
 	c.Lateness = in.Params.LatenessFor(c.EstArr)
 	return c
 }

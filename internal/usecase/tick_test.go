@@ -9,27 +9,19 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/platform/clock"
 )
 
-func testRules() domain.Scheduling {
-	return domain.Scheduling{
-		Schedules: []domain.Schedule{{
-			Name: "平日通勤",
-			Weekdays: []time.Weekday{
-				time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday,
-			},
-			At: domain.TimeOfDay{Hour: 7, Minute: 50},
-		}},
-		Tolerance:   2 * time.Minute,
-		RetryWindow: 10 * time.Minute,
-	}
+func newTestTick(now time.Time, st *fakeState, b *Brief) *Tick {
+	return newTestTickWithSettings(now, st, &fakeSettings{}, b)
 }
 
-func newTestTick(now time.Time, st *fakeState, b *Brief) *Tick {
+func newTestTickWithSettings(now time.Time, st *fakeState, settings *fakeSettings, b *Brief) *Tick {
 	return &Tick{
-		Clock: clock.Fixed{At: now},
-		State: st,
-		Brief: b,
-		Log:   quietLogger(),
-		Rules: testRules(),
+		Clock:       clock.Fixed{At: now},
+		State:       st,
+		Settings:    settings,
+		Brief:       b,
+		Log:         quietLogger(),
+		Tolerance:   2 * time.Minute,
+		RetryWindow: 10 * time.Minute,
 	}
 }
 
@@ -53,7 +45,7 @@ func TestTickRunsAndRecords(t *testing.T) {
 	if len(n.sent) != 1 {
 		t.Errorf("sent %d messages, want 1", len(n.sent))
 	}
-	if got := st.state.LastSuccess["平日通勤"]; got != "2026-08-18" {
+	if got := st.state.LastSuccess["commute"]; got != "2026-08-18" {
 		t.Errorf("recorded success = %q, want 2026-08-18", got)
 	}
 }
@@ -116,11 +108,11 @@ func TestTickRecordsAttemptBeforeRunning(t *testing.T) {
 		t.Fatal("expected the failed delivery to be reported")
 	}
 
-	a := st.state.Attempts["平日通勤"]
+	a := st.state.Attempts["commute"]
 	if a.Count != 1 || a.Date != "2026-08-18" {
 		t.Errorf("attempt = %+v, want one attempt recorded for today", a)
 	}
-	if st.state.LastSuccess["平日通勤"] != "" {
+	if st.state.LastSuccess["commute"] != "" {
 		t.Error("a failed delivery must not be recorded as a success")
 	}
 }
@@ -140,7 +132,7 @@ func TestTickRetriesThenGivesUp(t *testing.T) {
 			t.Errorf("the tick at %s did not retry: %s", hhmm, res.Decision.Reason)
 		}
 	}
-	if got := st.state.Attempts["平日通勤"].Count; got != 3 {
+	if got := st.state.Attempts["commute"].Count; got != 3 {
 		t.Errorf("attempts = %d, want 3", got)
 	}
 
@@ -156,7 +148,7 @@ func TestTickRetriesThenGivesUp(t *testing.T) {
 	if res.Result.Brief.Mode != domain.ModeDegraded {
 		t.Errorf("mode = %v, want degraded", res.Result.Brief.Mode)
 	}
-	if !st.state.Attempts["平日通勤"].GaveUp {
+	if !st.state.Attempts["commute"].GaveUp {
 		t.Error("the give-up must be recorded so it is not repeated")
 	}
 

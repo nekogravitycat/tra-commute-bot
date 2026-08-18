@@ -19,7 +19,6 @@ const (
 	defaultBoardBuffer    = 2 * time.Minute
 	defaultRiskMargin     = 3 * time.Minute
 	defaultCertMinDelay   = 5 * time.Minute
-	defaultMaxEarlyLeave  = 15 * time.Minute
 	defaultSevere         = 30 * time.Minute
 	defaultInterval       = 1500 * time.Millisecond
 	defaultTimeout        = 15 * time.Second
@@ -27,6 +26,7 @@ const (
 	defaultRetainDays     = 30
 	defaultTimezone       = "Asia/Taipei"
 	defaultStatePath      = "/var/lib/tra-commute/state.json"
+	defaultSettingsPath   = "/var/lib/tra-commute/settings.json"
 	defaultArchiveDir     = "/var/lib/tra-commute/dumps"
 )
 
@@ -50,43 +50,23 @@ func (f File) Build() (Config, error) {
 	}
 	c.Location = loc
 
-	c.Scheduling, err = f.scheduling()
-	if err != nil {
-		errs = append(errs, err.Error())
+	c.SkipDates = f.SkipDates
+	c.ExtraDates = f.ExtraDates
+	for _, d := range f.SkipDates {
+		if _, err := time.Parse("2006-01-02", d); err != nil {
+			errs = append(errs, fmt.Sprintf("skip_dates: %q must be yyyy-MM-dd", d))
+		}
 	}
+	for _, d := range f.ExtraDates {
+		if _, err := time.Parse("2006-01-02", d); err != nil {
+			errs = append(errs, fmt.Sprintf("extra_dates: %q must be yyyy-MM-dd", d))
+		}
+	}
+	c.Tolerance = minutesOr(f.TickToleranceMinutes, defaultTolerance)
+	c.RetryWindow = minutesOr(f.RetryWindowMinutes, defaultRetryWindow)
 
-	if f.Route.OriginStationID == "" {
-		errs = append(errs, "route.origin_station_id is required")
-	}
-	if f.Route.DestinationStationID == "" {
-		errs = append(errs, "route.destination_station_id is required")
-	}
-	c.OriginID = f.Route.OriginStationID
-	c.DestID = f.Route.DestinationStationID
-	c.Route = domain.Route{
-		OriginName:      orDefault(f.Route.OriginName, f.Route.OriginStationID),
-		DestinationName: orDefault(f.Route.DestinationName, f.Route.DestinationStationID),
-	}
 	c.UsualTrainNos = f.Route.UsualTrainNos
 
-	if f.Timing.ReadyLeadMinutes <= 0 {
-		errs = append(errs, "timing.ready_lead_minutes must be positive")
-	}
-	c.ReadyLead = minutes(f.Timing.ReadyLeadMinutes)
-
-	if f.Constraints.ClockInDeadline == "" {
-		errs = append(errs, "constraints.clock_in_deadline is required")
-	} else {
-		d, err := domain.ParseTimeOfDay(f.Constraints.ClockInDeadline)
-		if err != nil {
-			errs = append(errs, "constraints.clock_in_deadline: "+err.Error())
-		}
-		c.Deadline = d
-	}
-	if f.Constraints.LastMileMinutes < 0 {
-		errs = append(errs, "constraints.last_mile_minutes must not be negative")
-	}
-	c.LastMile = minutes(f.Constraints.LastMileMinutes)
 	c.Board = minutesOr(f.Constraints.BoardingBufferMinutes, defaultBoardBuffer)
 	c.RiskMargin = minutesOr(f.Constraints.RiskMarginMinutes, defaultRiskMargin)
 
@@ -120,7 +100,6 @@ func (f File) Build() (Config, error) {
 	c.CertificateNote = f.Certificate.Note
 
 	c.CompensationEnabled = f.Compensation.Enabled
-	c.MaxEarlyLeave = minutesOr(f.Compensation.MaxEarlyLeaveMinutes, defaultMaxEarlyLeave)
 	c.SevereThreshold = minutesOr(f.Compensation.SevereDelayThreshold, defaultSevere)
 
 	c.RequestInterval = defaultInterval
@@ -138,6 +117,7 @@ func (f File) Build() (Config, error) {
 	}
 
 	c.StatePath = orDefault(f.Storage.StatePath, defaultStatePath)
+	c.SettingsPath = orDefault(f.Storage.SettingsPath, defaultSettingsPath)
 	c.ArchiveDir = orDefault(f.Storage.ArchiveDir, defaultArchiveDir)
 	retain := f.Storage.ArchiveRetainDays
 	if retain == 0 {
@@ -149,77 +129,6 @@ func (f File) Build() (Config, error) {
 		return Config{}, fmt.Errorf("invalid config:\n  - %s", strings.Join(errs, "\n  - "))
 	}
 	return c, nil
-}
-
-func (f File) scheduling() (domain.Scheduling, error) {
-	s := domain.Scheduling{
-		SkipDates:   f.SkipDates,
-		Tolerance:   minutesOr(f.TickToleranceMinutes, defaultTolerance),
-		RetryWindow: minutesOr(f.RetryWindowMinutes, defaultRetryWindow),
-	}
-	if len(f.Schedules) == 0 {
-		return s, fmt.Errorf("schedules must contain at least one entry")
-	}
-
-	seen := map[string]bool{}
-	for i, sf := range f.Schedules {
-		name := sf.Name
-		if name == "" {
-			name = fmt.Sprintf("schedule-%d", i+1)
-		}
-		// Names key the state file, so duplicates would let one schedule
-		// silently mark another as already delivered.
-		if seen[name] {
-			return s, fmt.Errorf("schedules[%d]: duplicate name %q", i, name)
-		}
-		seen[name] = true
-
-		at, err := domain.ParseTimeOfDay(sf.At)
-		if err != nil {
-			return s, fmt.Errorf("schedules[%d] (%s): %w", i, name, err)
-		}
-		if len(sf.Weekdays) == 0 && len(sf.Dates) == 0 {
-			return s, fmt.Errorf("schedules[%d] (%s): needs weekdays or dates", i, name)
-		}
-
-		sch := domain.Schedule{Name: name, At: at, Dates: sf.Dates}
-		for _, w := range sf.Weekdays {
-			wd, err := parseWeekday(w)
-			if err != nil {
-				return s, fmt.Errorf("schedules[%d] (%s): %w", i, name, err)
-			}
-			sch.Weekdays = append(sch.Weekdays, wd)
-		}
-		for _, d := range sf.Dates {
-			if _, err := time.Parse("2006-01-02", d); err != nil {
-				return s, fmt.Errorf("schedules[%d] (%s): date %q must be yyyy-MM-dd", i, name, d)
-			}
-		}
-		s.Schedules = append(s.Schedules, sch)
-	}
-	for _, d := range f.SkipDates {
-		if _, err := time.Parse("2006-01-02", d); err != nil {
-			return s, fmt.Errorf("skip_dates: %q must be yyyy-MM-dd", d)
-		}
-	}
-	return s, nil
-}
-
-var weekdayNames = map[string]time.Weekday{
-	"sun": time.Sunday, "sunday": time.Sunday,
-	"mon": time.Monday, "monday": time.Monday,
-	"tue": time.Tuesday, "tues": time.Tuesday, "tuesday": time.Tuesday,
-	"wed": time.Wednesday, "weds": time.Wednesday, "wednesday": time.Wednesday,
-	"thu": time.Thursday, "thur": time.Thursday, "thurs": time.Thursday, "thursday": time.Thursday,
-	"fri": time.Friday, "friday": time.Friday,
-	"sat": time.Saturday, "saturday": time.Saturday,
-}
-
-func parseWeekday(s string) (time.Weekday, error) {
-	if wd, ok := weekdayNames[strings.ToLower(strings.TrimSpace(s))]; ok {
-		return wd, nil
-	}
-	return 0, fmt.Errorf("unknown weekday %q", s)
 }
 
 func minutes(n int) time.Duration { return time.Duration(n) * time.Minute }

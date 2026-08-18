@@ -13,7 +13,7 @@ func TestBriefRunHappyPath(t *testing.T) {
 	d := &fakeDelays{delays: map[string]int{"1136": 10, "2008": 10, "1138": 10}}
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
-	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestBriefParamsDeriveFromFiredAt(t *testing.T) {
 	d := &fakeDelays{delays: map[string]int{}}
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
-	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestBriefTimetableFailure(t *testing.T) {
 	d := &fakeDelays{delays: map[string]int{}}
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
-	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err != nil {
 		t.Fatalf("a data failure must not become a run failure: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestBriefLiveFailureKeepsTimetable(t *testing.T) {
 	d := &fakeDelays{err: errBoom}
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
-	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestBriefSendRetries(t *testing.T) {
 	b.SendBackoff = time.Second
 	b.Sleep = func(w time.Duration) { waits = append(waits, w) }
 
-	res, err := b.Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := b.Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestBriefSendExhausted(t *testing.T) {
 	r := &fakeRenderer{}
 	n := &fakeNotifier{failFor: 99}
 
-	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤")
+	res, err := newTestBrief(tt, d, r, n).Run(context.Background(), at("07:50"), "平日通勤", testTrip())
 	if err == nil {
 		t.Fatal("expected an error once every delivery attempt failed")
 	}
@@ -179,7 +179,7 @@ func TestRunDegraded(t *testing.T) {
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
 	res, err := newTestBrief(tt, d, r, n).RunDegraded(
-		context.Background(), at("07:50"), "平日通勤", "retry window expired")
+		context.Background(), at("07:50"), "平日通勤", "retry window expired", testTrip())
 	if err != nil {
 		t.Fatalf("RunDegraded: %v", err)
 	}
@@ -205,8 +205,13 @@ func TestBriefDeadlineRollover(t *testing.T) {
 	r, n := &fakeRenderer{}, &fakeNotifier{}
 
 	b := newTestBrief(tt, d, r, n)
-	// Fires at 23:00, so T_ready is 23:30 — well past a 09:30 deadline.
-	res, err := b.Run(context.Background(), at("23:00"), "夜班")
+	// A "夜班" schedule with a ready time just after midnight and a deadline
+	// early the same wall-clock morning: the deadline must roll to the next
+	// calendar day to stay after Ready.
+	nightTrip := testTrip()
+	nightTrip.ReadyAt = domain.TimeOfDay{Hour: 23, Minute: 30}
+	nightTrip.DeadlineAt = domain.TimeOfDay{Hour: 0, Minute: 30}
+	res, err := b.Run(context.Background(), at("23:00"), "夜班", nightTrip)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

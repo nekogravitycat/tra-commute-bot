@@ -12,6 +12,13 @@ func TestLoadCredentials(t *testing.T) {
 	t.Setenv(EnvTDXClientSecret, "secret")
 	t.Setenv(EnvTelegramToken, "token")
 	t.Setenv(EnvTelegramChatID, "chat")
+	// The alias vars are cleared too, so a real .env sourced into the shell
+	// (or CI) that happens to set TG_BOT_TOKEN/TG_CHAT_ID cannot change which
+	// credential value wins: firstEnv always tries the canonical name first,
+	// but only once every test controls both names is the outcome actually
+	// pinned rather than incidentally correct.
+	t.Setenv(envTelegramTokenAlt, "")
+	t.Setenv(envTelegramChatIDAlt, "")
 
 	c, err := LoadCredentials()
 	if err != nil {
@@ -47,8 +54,15 @@ func TestMissingTDXCredentials(t *testing.T) {
 func TestTelegramOptional(t *testing.T) {
 	t.Setenv(EnvTDXClientID, "id")
 	t.Setenv(EnvTDXClientSecret, "secret")
+	// Both the canonical names and their aliases must be cleared: firstEnv
+	// falls back to TG_BOT_TOKEN/TG_CHAT_ID, so a real .env or shell profile
+	// exporting those (as a developer's own credentials file might) would
+	// otherwise leak into this test and make Telegram look configured when
+	// the test is deliberately simulating a fresh install that has neither.
 	t.Setenv(EnvTelegramToken, "")
 	t.Setenv(EnvTelegramChatID, "")
+	t.Setenv(envTelegramTokenAlt, "")
+	t.Setenv(envTelegramChatIDAlt, "")
 
 	c, err := LoadCredentials()
 	if err != nil {

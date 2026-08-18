@@ -8,13 +8,13 @@ import "time"
 // no special handling anywhere downstream.
 type Params struct {
 	// Ready is T_ready: the earliest the user can be standing at the origin
-	// station (the schedule's fire time plus ready_lead_minutes).
+	// station, set directly by the user rather than derived from the
+	// notification time.
 	Ready time.Time
-	// Deadline is the clock-in deadline.
+	// Deadline is the latest acceptable arrival at the destination station.
+	// The trip from that station to wherever the user is actually headed is
+	// out of scope: the system has no way to estimate it, so it does not try.
 	Deadline time.Time
-	// LastMile is the time from arriving at the destination station to
-	// clocking in.
-	LastMile time.Duration
 	// BoardBuffer is the slack needed between reaching the platform and the
 	// train pulling away.
 	BoardBuffer time.Duration
@@ -30,14 +30,10 @@ func (p Params) EarliestBoarding() time.Time { return p.Ready.Add(p.BoardBuffer)
 // that a shrinking delay will not strand the user on the platform.
 func (p Params) SafeBoarding() time.Time { return p.EarliestBoarding().Add(p.RiskMargin) }
 
-// ClockInFor returns when the user badges in if they arrive at the destination
-// station at arr.
-func (p Params) ClockInFor(arr time.Time) time.Time { return arr.Add(p.LastMile) }
-
-// LatenessFor returns how late the user is if they arrive at the destination
-// station at arr, floored at zero.
+// LatenessFor returns how late the user's arrival at the destination station
+// is compared to Deadline, floored at zero.
 func (p Params) LatenessFor(arr time.Time) time.Duration {
-	d := p.ClockInFor(arr).Sub(p.Deadline)
+	d := arr.Sub(p.Deadline)
 	if d < 0 {
 		return 0
 	}
@@ -48,7 +44,7 @@ func (p Params) LatenessFor(arr time.Time) time.Duration {
 // the mirror of LatenessFor and exists so the renderer never has to negate a
 // duration to print "餘裕 8 分".
 func (p Params) SlackFor(arr time.Time) time.Duration {
-	d := p.Deadline.Sub(p.ClockInFor(arr))
+	d := p.Deadline.Sub(arr)
 	if d < 0 {
 		return 0
 	}

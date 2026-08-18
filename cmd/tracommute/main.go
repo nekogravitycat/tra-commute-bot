@@ -7,11 +7,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	// Embedding the timezone database removes the single most annoying
@@ -22,6 +22,7 @@ import (
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/archive"
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/render"
+	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/settingsfile"
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/statefile"
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/tdx"
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/telegram"
@@ -109,7 +110,7 @@ func run() error {
 	defer cancel()
 
 	if o.force {
-		return app.forceRun(ctx, cfg, now, o, log)
+		return app.forceRun(ctx, now, o, log)
 	}
 
 	res, err := app.tick(now, o, log).Run(ctx)
@@ -122,10 +123,22 @@ func run() error {
 
 // application holds the wired dependencies.
 type application struct {
-	brief   *usecase.Brief
-	state   usecase.StateStore
-	rules   domain.Scheduling
-	archive *archive.Dir
+	brief    *usecase.Brief
+	state    usecase.StateStore
+	settings usecase.SettingsStore
+	guard    guardParams
+	archive  *archive.Dir
+}
+
+// guardParams are the admin-only scheduling knobs that stay in config.yaml:
+// they change rarely, unlike the schedule's own weekdays and fire time,
+// which the user edits live via /schedule and which usecase.Tick reads out
+// of SettingsStore on every wake-up.
+type guardParams struct {
+	SkipDates   []string
+	ExtraDates  []string
+	Tolerance   time.Duration
+	RetryWindow time.Duration
 }
 
 // build is the composition root: the one place that knows which concrete
@@ -184,12 +197,6 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 		SendRetries: sendRetries,
 		SendBackoff: sendBackoff,
 		Settings: usecase.BriefSettings{
-			Route:               cfg.Route,
-			OriginID:            cfg.OriginID,
-			DestID:              cfg.DestID,
-			ReadyLead:           cfg.ReadyLead,
-			Deadline:            cfg.Deadline,
-			LastMile:            cfg.LastMile,
 			Board:               cfg.Board,
 			RiskMargin:          cfg.RiskMargin,
 			Window:              cfg.Window,
@@ -198,15 +205,20 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 			CertificateEnabled:  cfg.CertificateEnabled,
 			CertificateMinDelay: cfg.CertificateMinDelay,
 			CompensationEnabled: cfg.CompensationEnabled,
-			MaxEarlyLeave:       cfg.MaxEarlyLeave,
 			SevereThreshold:     cfg.SevereThreshold,
 		},
 	}
 
 	return &application{
-		brief:   brief,
-		state:   statefile.New(cfg.StatePath),
-		rules:   cfg.Scheduling,
+		brief:    brief,
+		state:    statefile.New(cfg.StatePath),
+		settings: settingsfile.New(cfg.SettingsPath),
+		guard: guardParams{
+			SkipDates:   cfg.SkipDates,
+			ExtraDates:  cfg.ExtraDates,
+			Tolerance:   cfg.Tolerance,
+			RetryWindow: cfg.RetryWindow,
+		},
 		archive: arch,
 	}, nil
 }
@@ -228,27 +240,38 @@ func buildNotifier(o options, cfg config.Config, log *slog.Logger) (usecase.Noti
 
 func (a *application) tick(now time.Time, o options, log *slog.Logger) *usecase.Tick {
 	return &usecase.Tick{
-		Clock:  clock.Fixed{At: now},
-		State:  a.state,
-		Brief:  a.brief,
-		Log:    log,
-		Rules:  a.rules,
-		DryRun: o.dryRun,
+		Clock:       clock.Fixed{At: now},
+		State:       a.state,
+		Settings:    a.settings,
+		Brief:       a.brief,
+		Log:         log,
+		SkipDates:   a.guard.SkipDates,
+		ExtraDates:  a.guard.ExtraDates,
+		Tolerance:   a.guard.Tolerance,
+		RetryWindow: a.guard.RetryWindow,
+		DryRun:      o.dryRun,
 	}
 }
 
-// forceRun bypasses the schedule guard entirely, using the first configured
-// schedule's time on the simulated date. Without it, a mid-afternoon debugging
+// forceRun bypasses the schedule guard entirely, using the live settings'
+// schedule time on the simulated date. Without it, a mid-afternoon debugging
 // session produces nothing at all, because the guard is doing its job.
-func (a *application) forceRun(ctx context.Context, cfg config.Config, now time.Time, o options, log *slog.Logger) error {
-	if len(cfg.Scheduling.Schedules) == 0 {
-		return errors.New("-force needs at least one schedule in the config")
+func (a *application) forceRun(ctx context.Context, now time.Time, o options, log *slog.Logger) error {
+	trip, err := a.settings.Load()
+	if err != nil {
+		return fmt.Errorf("load settings: %w", err)
 	}
-	sch := cfg.Scheduling.Schedules[0]
+	complete, missing := trip.Complete()
+	if !complete {
+		return fmt.Errorf("-force needs the live settings to be complete first; missing: %s "+
+			"(use Telegram's /route /ready /deadline /schedule /earlyleave)", strings.Join(missing, ", "))
+	}
+
+	sch := trip.Schedule()
 	firedAt := sch.At.On(now)
 	log.Info("forced run", "schedule", sch.Name, "fired_at", firedAt)
 
-	res, err := a.brief.Run(ctx, firedAt, sch.Name)
+	res, err := a.brief.Run(ctx, firedAt, sch.Name, trip)
 	if err != nil {
 		return err
 	}

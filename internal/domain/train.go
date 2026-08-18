@@ -67,9 +67,8 @@ type Candidate struct {
 	EstArr time.Time // SchedArr + Delay
 
 	Catchability Catchability
-	// ClockIn is when the user would badge in: EstArr plus the last-mile time.
-	ClockIn time.Time
-	// Lateness is how late that is, floored at zero (§7.4 axis two).
+	// Lateness is how late EstArr is versus the user's deadline, floored at
+	// zero (§7.4 axis two).
 	Lateness time.Duration
 
 	// Usual marks one of the user's habitual trains (config usual_train_nos).

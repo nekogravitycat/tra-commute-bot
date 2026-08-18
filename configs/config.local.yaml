@@ -1,26 +1,15 @@
 # Local development configuration.
 #
-# Identical to config.example.yaml except that state and archives are written
-# inside the project directory rather than under /var/lib.
+# Identical to config.example.yaml except that state, settings and archives
+# are written inside the project directory rather than under /var/lib.
 #
 #   go run ./cmd/tracommute -config configs/config.local.yaml -dry-run -force
-schedules:
-  - name: "平日通勤"
-    weekdays: [Mon, Tue, Wed, Thu, Fri]
-    at: "07:50"
-
+extra_dates: []
 skip_dates: []
 tick_tolerance_minutes: 2
 retry_window_minutes: 10
 
-timing:
-  ready_lead_minutes: 30
-
 route:
-  origin_station_id: "1080"
-  origin_name: "桃園"
-  destination_station_id: "1000"
-  destination_name: "臺北"
   usual_train_nos: ["2008", "1136", "1138"]
   lookback_minutes: 30
   lookahead_minutes: 60
@@ -30,8 +19,6 @@ route:
   unknown_train_type_policy: "include_and_flag"
 
 constraints:
-  clock_in_deadline: "09:30"
-  last_mile_minutes: 20
   boarding_buffer_minutes: 2
   risk_margin_minutes: 3
 
@@ -42,7 +29,6 @@ certificate:
 
 compensation:
   enabled: true
-  max_early_leave_minutes: 15
   severe_delay_threshold: 30
 
 api:
@@ -55,5 +41,6 @@ output:
 
 storage:
   state_path: ".local/state.json"
+  settings_path: ".local/settings.json"
   archive_dir: ".local/dumps"
   archive_retain_days: 30

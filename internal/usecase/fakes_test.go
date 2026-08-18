@@ -105,6 +105,35 @@ func (f *fakeState) Save(s domain.TickState) error {
 	return nil
 }
 
+// fakeSettings backs SettingsStore. It defaults to testTrip() when no
+// settings have been explicitly loaded, so tests that do not care about the
+// live-settings plumbing keep working against a complete trip.
+type fakeSettings struct {
+	settings *domain.Settings // nil until Save or an explicit preset is given
+	loadErr  error
+	saveErr  error
+	saves    int
+}
+
+func (f *fakeSettings) Load() (domain.Settings, error) {
+	if f.loadErr != nil {
+		return domain.Settings{}, f.loadErr
+	}
+	if f.settings == nil {
+		return testTrip(), nil
+	}
+	return *f.settings, nil
+}
+
+func (f *fakeSettings) Save(s domain.Settings) error {
+	f.saves++
+	if f.saveErr != nil {
+		return f.saveErr
+	}
+	f.settings = &s
+	return nil
+}
+
 func svc(no, typeID, typeName, dep, arr string) domain.Service {
 	return domain.Service{
 		TrainNo: no, TypeID: typeID, TypeName: typeName,
@@ -122,12 +151,6 @@ func usualServices() []domain.Service {
 
 func testSettings() BriefSettings {
 	return BriefSettings{
-		Route:      domain.Route{OriginName: "桃園", DestinationName: "臺北"},
-		OriginID:   "1080",
-		DestID:     "1000",
-		ReadyLead:  30 * time.Minute,
-		Deadline:   domain.TimeOfDay{Hour: 9, Minute: 30},
-		LastMile:   20 * time.Minute,
 		Board:      2 * time.Minute,
 		RiskMargin: 3 * time.Minute,
 		Window:     domain.Window{Lookback: 30 * time.Minute, Lookahead: 60 * time.Minute},
@@ -140,8 +163,24 @@ func testSettings() BriefSettings {
 		CertificateEnabled:  true,
 		CertificateMinDelay: 5 * time.Minute,
 		CompensationEnabled: true,
-		MaxEarlyLeave:       15 * time.Minute,
 		SevereThreshold:     30 * time.Minute,
+	}
+}
+
+// testTrip is the live settings (schedule, ready/deadline time, route, max
+// early leave) that Brief.Run now takes per-call, in place of the fields that
+// used to live on BriefSettings.
+func testTrip() domain.Settings {
+	return domain.Settings{
+		ScheduleWeekdays: []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday},
+		ScheduleAt:       domain.TimeOfDay{Hour: 7, Minute: 50},
+		ReadyAt:          domain.TimeOfDay{Hour: 8, Minute: 20},
+		DeadlineAt:       domain.TimeOfDay{Hour: 9, Minute: 30},
+		MaxEarlyLeave:    15 * time.Minute,
+		OriginID:         "1080",
+		OriginName:       "桃園",
+		DestinationID:    "1000",
+		DestinationName:  "臺北",
 	}
 }
 

@@ -7,7 +7,9 @@ import (
 
 // The scenarios in §7.7 are all set on one morning, with the parameters the
 // specification fixes: T_ready 08:20, boarding buffer 2, risk margin 3,
-// deadline 09:30, last mile 20. That makes CATCHABLE start at 08:25.
+// deadline (destination-station arrival) 09:10 — equivalent to the old
+// clock-in deadline of 09:30 minus a 20-minute last mile, which is where
+// these fixtures originated. That makes CATCHABLE start at 08:25.
 var testLoc = time.FixedZone("Asia/Taipei", 8*3600)
 
 func at(hhmm string) time.Time {
@@ -21,8 +23,7 @@ func at(hhmm string) time.Time {
 func testParams() Params {
 	return Params{
 		Ready:       at("08:20"),
-		Deadline:    at("09:30"),
-		LastMile:    20 * time.Minute,
+		Deadline:    at("09:10"),
 		BoardBuffer: 2 * time.Minute,
 		RiskMargin:  3 * time.Minute,
 	}

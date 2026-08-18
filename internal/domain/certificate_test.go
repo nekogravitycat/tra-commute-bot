@@ -73,10 +73,10 @@ func TestCertificateNotCovered(t *testing.T) {
 // warning: the user is late while the railway is running fine, so there is
 // nothing to certify and the cause lies in their own timings.
 func TestCertificateNoneOnPunctualLine(t *testing.T) {
-	// Everything punctual, but the last mile is long enough to make even the
-	// best train late.
+	// Everything punctual, but the deadline is early enough that even the
+	// best train's scheduled arrival is late.
 	p := testParams()
-	p.LastMile = 45 * time.Minute
+	p.Deadline = at("08:50")
 	plan := BuildPlan(PlanInput{
 		Services: usualServices(),
 		Delays:   map[string]int{"1136": 0, "2008": 0, "1138": 0},

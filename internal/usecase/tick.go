@@ -8,19 +8,44 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 )
 
-// Tick is one wake-up of the every-minute timer (§10.3). It applies the guard,
+// Tick is one wake-up of the every-minute loop (§10.3). It applies the guard,
 // and only when the guard says so does it run the brief and record the outcome.
 //
-// Almost every invocation ends after reading the config and the state file,
-// without a single network call, which is what makes the once-a-minute design
-// affordable.
+// Almost every invocation ends after reading the state file and the live
+// settings, without a single network call, which is what makes the
+// once-a-minute design affordable even though the process itself now stays
+// up all day rather than exiting between wake-ups.
 type Tick struct {
-	Clock  Clock
-	State  StateStore
-	Brief  *Brief
-	Log    *slog.Logger
-	Rules  domain.Scheduling
+	Clock    Clock
+	State    StateStore
+	Settings SettingsStore
+	Brief    *Brief
+	Log      *slog.Logger
+
+	// SkipDates, ExtraDates, Tolerance and RetryWindow are the guard
+	// parameters that stay in config.yaml: they change rarely, unlike the
+	// schedule's own weekdays and fire time, which the user edits live via
+	// /schedule and are read out of Settings on every tick.
+	SkipDates   []string
+	ExtraDates  []string // manual make-up workdays, admin-managed
+	Tolerance   time.Duration
+	RetryWindow time.Duration
+
 	DryRun bool
+}
+
+// scheduling merges the config-file guard parameters with the live schedule
+// the user set via /schedule, so a change to either takes effect on the very
+// next tick.
+func (t *Tick) scheduling(s domain.Settings) domain.Scheduling {
+	sch := s.Schedule()
+	sch.Dates = append(append([]string{}, sch.Dates...), t.ExtraDates...)
+	return domain.Scheduling{
+		Schedules:   []domain.Schedule{sch},
+		SkipDates:   t.SkipDates,
+		Tolerance:   t.Tolerance,
+		RetryWindow: t.RetryWindow,
+	}
 }
 
 // TickResult reports what the wake-up did.
@@ -43,7 +68,13 @@ func (t *Tick) Run(ctx context.Context) (TickResult, error) {
 		state = domain.TickState{}
 	}
 
-	decision := domain.DecideTick(now, t.Rules, state)
+	trip, err := t.Settings.Load()
+	if err != nil {
+		t.Log.Warn("settings unreadable, continuing with empty settings", "err", err)
+		trip = domain.Settings{}
+	}
+
+	decision := domain.DecideTick(now, t.scheduling(trip), state)
 	out := TickResult{Decision: decision}
 
 	switch decision.Action {
@@ -53,9 +84,22 @@ func (t *Tick) Run(ctx context.Context) (TickResult, error) {
 
 	case domain.TickGiveUp:
 		t.Log.Error("giving up on schedule", "schedule", decision.Schedule.Name, "reason", decision.Reason)
-		res, err := t.Brief.RunDegraded(ctx, decision.FiredAt, decision.Schedule.Name, decision.Reason)
+		res, err := t.Brief.RunDegraded(ctx, decision.FiredAt, decision.Schedule.Name, decision.Reason, trip)
 		out.Ran, out.Result = true, res
 		t.recordGaveUp(&state, decision, now)
+		return out, err
+	}
+
+	if complete, missing := trip.Complete(); !complete {
+		// The schedule is configured and due, but the user has not finished
+		// telling the bot the rest (most often right after a fresh
+		// install). One reminder is enough — recording it as a success
+		// keeps the retry loop from repeating it every minute for the rest
+		// of the tolerance/retry window.
+		t.Log.Warn("settings incomplete, sending reminder instead of a brief", "missing", missing)
+		res, err := t.Brief.RunIncomplete(ctx, decision.FiredAt, decision.Schedule.Name, missing)
+		out.Ran, out.Result = true, res
+		t.recordSuccess(&state, decision, now)
 		return out, err
 	}
 
@@ -69,7 +113,7 @@ func (t *Tick) Run(ctx context.Context) (TickResult, error) {
 	// otherwise the retry window never starts counting.
 	t.recordAttempt(&state, decision, now)
 
-	res, err := t.Brief.Run(ctx, decision.FiredAt, decision.Schedule.Name)
+	res, err := t.Brief.Run(ctx, decision.FiredAt, decision.Schedule.Name, trip)
 	out.Ran, out.Result = true, res
 	if err != nil {
 		return out, err

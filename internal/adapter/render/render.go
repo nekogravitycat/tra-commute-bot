@@ -86,8 +86,8 @@ func (t Telegram) renderNormal(b domain.Brief) string {
 	fmt.Fprintf(&s, "%s %s → %s %s\n",
 		esc(b.Route.OriginName), clock(rec.EstDep),
 		esc(b.Route.DestinationName), clock(rec.EstArr))
-	fmt.Fprintf(&s, "%s · 預計 %s 打卡（餘裕 %d 分）\n",
-		delayPhrase(rec), clock(rec.ClockIn), minutes(b.Params.SlackFor(rec.EstArr)))
+	fmt.Fprintf(&s, "%s · 預計 %s 抵達（餘裕 %d 分）\n",
+		delayPhrase(rec), clock(rec.EstArr), minutes(b.Params.SlackFor(rec.EstArr)))
 
 	if warn := unknownTypeWarning(b.Plan); warn != "" {
 		s.WriteString("\n" + warn + "\n")
@@ -132,8 +132,8 @@ func (t Telegram) renderLate(b domain.Brief) string {
 		delayPhrase(rec),
 		esc(b.Route.OriginName), clock(rec.EstDep),
 		esc(b.Route.DestinationName), clock(rec.EstArr))
-	fmt.Fprintf(&s, "預計 %s 打卡 · %s\n",
-		clock(rec.ClockIn), bold(fmt.Sprintf("遲到 %d 分", rec.LatenessMinutes())))
+	fmt.Fprintf(&s, "預計 %s 抵達 · %s\n",
+		clock(rec.EstArr), bold(fmt.Sprintf("遲到 %d 分", rec.LatenessMinutes())))
 
 	if comp := t.compensationBlock(b); comp != "" {
 		s.WriteString("\n" + comp)
@@ -165,9 +165,9 @@ func (t Telegram) compensationBlock(b domain.Brief) string {
 	s.WriteString(bold("提早出門") + "\n")
 	fmt.Fprintf(&s, "提早 %d 分（%s 到站）可搭 %s\n",
 		best.EarlyLeaveMinutes(), clock(best.RequiredReady), esc(best.Candidate.TrainNo))
-	fmt.Fprintf(&s, "%s · 抵%s %s → %s 打卡\n",
+	fmt.Fprintf(&s, "%s · 抵%s %s\n",
 		delayPhrase(best.Candidate), destSuffix(b.Route.DestinationName),
-		clock(best.Candidate.EstArr), clock(best.Candidate.ClockIn))
+		clock(best.Candidate.EstArr))
 	if best.Lateness == 0 {
 		fmt.Fprintf(&s, "%s · 較照常出門少遲到 %d 分\n", bold("這樣做可以準時"), best.SavedMinutes())
 	} else {
@@ -379,8 +379,7 @@ func unknownTypeWarning(p domain.Plan) string {
 // drifting assumption noticeable before it becomes a habit.
 func (t Telegram) footer(b domain.Brief) string {
 	var s strings.Builder
-	fmt.Fprintf(&s, "\n以 %s 抵站、末端 %d 分計算\n",
-		clock(b.Params.Ready), minutes(b.Params.LastMile))
+	fmt.Fprintf(&s, "\n以 %s 抵站計算\n", clock(b.Params.Ready))
 	if !b.DataUpdatedAt.IsZero() {
 		fmt.Fprintf(&s, "資料更新 %s\n", b.DataUpdatedAt.Format("15:04:05"))
 	}

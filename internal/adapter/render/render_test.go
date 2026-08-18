@@ -23,8 +23,7 @@ func at(hhmm string) time.Time {
 func testParams() domain.Params {
 	return domain.Params{
 		Ready:       at("08:20"),
-		Deadline:    at("09:30"),
-		LastMile:    20 * time.Minute,
+		Deadline:    at("09:10"),
 		BoardBuffer: 2 * time.Minute,
 		RiskMargin:  3 * time.Minute,
 	}
@@ -91,8 +90,8 @@ func TestRenderNormal(t *testing.T) {
 		"<b>建議搭乘 2008 區間快</b>",
 		"桃園 08:26 → 臺北 09:02",
 		"準點",
-		"預計 09:22 打卡（餘裕 8 分）",
-		"以 08:20 抵站、末端 20 分計算",
+		"預計 09:02 抵達（餘裕 8 分）",
+		"以 08:20 抵站計算",
 		"資料更新 07:49:53",
 	} {
 		if !strings.Contains(msg.Text, want) {
@@ -216,7 +215,10 @@ func TestRenderCertificateNotCovered(t *testing.T) {
 // appear at all rather than explaining its own absence.
 func TestRenderCertificateUnavailable(t *testing.T) {
 	p := testParams()
-	p.LastMile = 45 * time.Minute
+	// Everything punctual, but the deadline is early enough that even the
+	// best train's scheduled arrival is late (mirrors domain's
+	// TestCertificateNoneOnPunctualLine fixture).
+	p.Deadline = at("08:50")
 	plan := domain.BuildPlan(domain.PlanInput{
 		Services: usualServices(),
 		Delays:   map[string]int{"1136": 0, "2008": 0, "1138": 0},

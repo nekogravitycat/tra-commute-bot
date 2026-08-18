@@ -25,10 +25,9 @@ func testBriefInput(plan Plan) BriefInput {
 // rather than set, so the renderer and these tests cannot drift apart.
 func TestBriefModes(t *testing.T) {
 	tests := []struct {
-		name     string
-		delays   map[string]int
-		lastMile time.Duration
-		want     Mode
+		name   string
+		delays map[string]int
+		want   Mode
 	}{
 		{
 			name:   "on time",

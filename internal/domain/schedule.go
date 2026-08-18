@@ -29,6 +29,54 @@ func ParseTimeOfDay(s string) (TimeOfDay, error) {
 
 func (t TimeOfDay) String() string { return fmt.Sprintf("%02d:%02d", t.Hour, t.Minute) }
 
+// weekdayNames accepts the short and long English forms used by both
+// config.yaml's schedules[].weekdays and the /schedule Telegram command, so
+// the two surfaces stay consistent.
+var weekdayNames = map[string]time.Weekday{
+	"sun": time.Sunday, "sunday": time.Sunday,
+	"mon": time.Monday, "monday": time.Monday,
+	"tue": time.Tuesday, "tues": time.Tuesday, "tuesday": time.Tuesday,
+	"wed": time.Wednesday, "weds": time.Wednesday, "wednesday": time.Wednesday,
+	"thu": time.Thursday, "thur": time.Thursday, "thurs": time.Thursday, "thursday": time.Thursday,
+	"fri": time.Friday, "friday": time.Friday,
+	"sat": time.Saturday, "saturday": time.Saturday,
+}
+
+var weekdayShort = [...]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+
+// ParseWeekday accepts a case-insensitive short or long English weekday name.
+func ParseWeekday(s string) (time.Weekday, error) {
+	if wd, ok := weekdayNames[strings.ToLower(strings.TrimSpace(s))]; ok {
+		return wd, nil
+	}
+	return 0, fmt.Errorf("unknown weekday %q", s)
+}
+
+// ParseWeekdays splits a comma-separated list ("Mon,Tue,Wed,Thu,Fri") into
+// weekdays, in the order given.
+func ParseWeekdays(csv string) ([]time.Weekday, error) {
+	var out []time.Weekday
+	for _, part := range strings.Split(csv, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		wd, err := ParseWeekday(part)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, wd)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no weekdays given")
+	}
+	return out, nil
+}
+
+// WeekdayShort renders a weekday the way ParseWeekday reads it back, for
+// /status and confirmation messages.
+func WeekdayShort(w time.Weekday) string { return weekdayShort[w] }
+
 // On resolves the time of day against a date, in that date's location.
 func (t TimeOfDay) On(day time.Time) time.Time {
 	return time.Date(day.Year(), day.Month(), day.Day(), t.Hour, t.Minute, 0, 0, day.Location())

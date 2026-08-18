@@ -5,37 +5,28 @@
 #
 # Edits take effect on the next tick: no sudo, no daemon-reload, no restart.
 # The every-minute timer re-reads this file each time it wakes.
+#
+# This file holds only the calibration knobs an admin edits by hand. The trip
+# parameters that change often — schedule, ready time, deadline, route, max
+# early leave — are not here: they are set live over Telegram (/route,
+# /ready, /deadline, /schedule, /earlyleave) and persisted in storage.settings_path
+# below. A fresh install has none of them set, and the bot will say so.
 
-# ── Schedule ──────────────────────────────────────────────────────
+# ── Schedule guard ────────────────────────────────────────────────
 # The systemd timer fires every minute; the program decides whether this
-# particular minute is the scheduled one.
-schedules:
-  - name: "平日通勤"
-    weekdays: [Mon, Tue, Wed, Thu, Fri]
-    at: "07:50"
-  # Make-up workdays are listed by hand rather than read from a government
-  # calendar feed.
-  # - name: "補班日"
-  #   dates: ["2026-09-26", "2026-12-19"]
-  #   at: "07:50"
-
+# particular minute is the scheduled one. The schedule's own weekdays and
+# fire time come from /schedule, not from here.
+extra_dates: []             # one-off make-up workdays (補班日), yyyy-MM-dd
 skip_dates: []              # leave, public holidays, business trips
 
 tick_tolerance_minutes: 2   # a first attempt is accepted within [at, at+2]
 retry_window_minutes: 10    # retry every minute until [at, at+10], then send
                             # the degraded notice and stop for the day
 
-timing:
-  ready_lead_minutes: 30    # T_ready = at + 30: when you can be at the origin
-
 # v0.1 plans a single leg. v0.2 turns this into a list of journeys, with each
 # schedule able to name one; entries without a journey keep using the default,
 # so this structure will not become a breaking change.
 route:
-  origin_station_id: "1080"           # 桃園
-  origin_name: "桃園"
-  destination_station_id: "1000"      # 臺北
-  destination_name: "臺北"
   usual_train_nos: ["2008", "1136", "1138"]   # marked as habitual; does not
                                               # restrict the candidate set
   lookback_minutes: 30      # reach backwards for trains whose scheduled
@@ -57,8 +48,6 @@ route:
   unknown_train_type_policy: "include_and_flag"   # include_and_flag | exclude
 
 constraints:
-  clock_in_deadline: "09:30"
-  last_mile_minutes: 20     # destination station to clocking in (metro + walk)
   boarding_buffer_minutes: 2
   risk_margin_minutes: 3    # below this much slack a train is "risky" and is
                             # offered but never recommended
@@ -70,7 +59,6 @@ certificate:                # delay certificates
 
 compensation:               # the only lever offered is leaving earlier
   enabled: true
-  max_early_leave_minutes: 15
   severe_delay_threshold: 30   # past this the message escalates
 
 api:
@@ -85,6 +73,8 @@ output:
 
 storage:
   state_path: "/var/lib/tra-commute/state.json"
+  settings_path: "/var/lib/tra-commute/settings.json"   # written by the
+                            # Telegram commands, read fresh every tick
   archive_dir: "/var/lib/tra-commute/dumps"
   archive_retain_days: 30   # the only evidence left when a recommendation
                             # turns out to have been wrong

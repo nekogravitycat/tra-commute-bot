@@ -20,24 +20,24 @@ import (
 
 // File mirrors the YAML document. Field names match the specification's
 // config.yaml exactly, so the file and this struct can be read side by side.
+//
+// This holds only the calibration knobs an admin edits by hand: the six trip
+// parameters that change often (schedule, ready time, deadline, route, max
+// early leave) live in the settings file instead, set live over Telegram —
+// see internal/domain.Settings and internal/adapter/settingsfile.
 type File struct {
-	Schedules            []scheduleFile `yaml:"schedules"`
-	SkipDates            []string       `yaml:"skip_dates"`
-	TickToleranceMinutes int            `yaml:"tick_tolerance_minutes"`
-	RetryWindowMinutes   int            `yaml:"retry_window_minutes"`
-
-	Timing struct {
-		ReadyLeadMinutes int `yaml:"ready_lead_minutes"`
-	} `yaml:"timing"`
+	// ExtraDates are one-off make-up workdays (補班日) that fire on the same
+	// schedule time as the regular weekday schedule. Rare enough that a
+	// manual config edit is the right interface for them.
+	ExtraDates           []string `yaml:"extra_dates"`
+	SkipDates            []string `yaml:"skip_dates"`
+	TickToleranceMinutes int      `yaml:"tick_tolerance_minutes"`
+	RetryWindowMinutes   int      `yaml:"retry_window_minutes"`
 
 	Route struct {
-		OriginStationID      string   `yaml:"origin_station_id"`
-		OriginName           string   `yaml:"origin_name"`
-		DestinationStationID string   `yaml:"destination_station_id"`
-		DestinationName      string   `yaml:"destination_name"`
-		UsualTrainNos        []string `yaml:"usual_train_nos"`
-		LookbackMinutes      int      `yaml:"lookback_minutes"`
-		LookaheadMinutes     int      `yaml:"lookahead_minutes"`
+		UsualTrainNos    []string `yaml:"usual_train_nos"`
+		LookbackMinutes  int      `yaml:"lookback_minutes"`
+		LookaheadMinutes int      `yaml:"lookahead_minutes"`
 
 		ExcludedTrainTypeIDs      []string `yaml:"excluded_train_type_ids"`
 		ExcludedTrainTypeKeywords []string `yaml:"excluded_train_type_keywords"`
@@ -46,10 +46,8 @@ type File struct {
 	} `yaml:"route"`
 
 	Constraints struct {
-		ClockInDeadline       string `yaml:"clock_in_deadline"`
-		LastMileMinutes       int    `yaml:"last_mile_minutes"`
-		BoardingBufferMinutes int    `yaml:"boarding_buffer_minutes"`
-		RiskMarginMinutes     int    `yaml:"risk_margin_minutes"`
+		BoardingBufferMinutes int `yaml:"boarding_buffer_minutes"`
+		RiskMarginMinutes     int `yaml:"risk_margin_minutes"`
 	} `yaml:"constraints"`
 
 	Certificate struct {
@@ -60,7 +58,6 @@ type File struct {
 
 	Compensation struct {
 		Enabled              bool `yaml:"enabled"`
-		MaxEarlyLeaveMinutes int  `yaml:"max_early_leave_minutes"`
 		SevereDelayThreshold int  `yaml:"severe_delay_threshold"`
 	} `yaml:"compensation"`
 
@@ -76,16 +73,10 @@ type File struct {
 
 	Storage struct {
 		StatePath         string `yaml:"state_path"`
+		SettingsPath      string `yaml:"settings_path"`
 		ArchiveDir        string `yaml:"archive_dir"`
 		ArchiveRetainDays int    `yaml:"archive_retain_days"`
 	} `yaml:"storage"`
-}
-
-type scheduleFile struct {
-	Name     string   `yaml:"name"`
-	Weekdays []string `yaml:"weekdays"`
-	Dates    []string `yaml:"dates"`
-	At       string   `yaml:"at"`
 }
 
 // Credentials come from the environment, never from the config file, so the
@@ -99,16 +90,17 @@ type Credentials struct {
 
 // Config is the validated, converted result.
 type Config struct {
-	Location   *time.Location
-	Scheduling domain.Scheduling
+	Location *time.Location
 
-	OriginID string
-	DestID   string
-	Route    domain.Route
+	// SkipDates, ExtraDates, Tolerance and RetryWindow are the guard
+	// parameters that stay admin-only; the schedule's own weekdays and fire
+	// time come from the live settings file instead (usecase.Tick merges
+	// the two into a domain.Scheduling on every tick).
+	SkipDates   []string
+	ExtraDates  []string
+	Tolerance   time.Duration
+	RetryWindow time.Duration
 
-	ReadyLead  time.Duration
-	Deadline   domain.TimeOfDay
-	LastMile   time.Duration
 	Board      time.Duration
 	RiskMargin time.Duration
 
@@ -121,7 +113,6 @@ type Config struct {
 	CertificateNote     string
 
 	CompensationEnabled bool
-	MaxEarlyLeave       time.Duration
 	SevereThreshold     time.Duration
 
 	RequestInterval time.Duration
@@ -130,6 +121,7 @@ type Config struct {
 	MaxAlternatives int
 
 	StatePath        string
+	SettingsPath     string
 	ArchiveDir       string
 	ArchiveRetention time.Duration
 

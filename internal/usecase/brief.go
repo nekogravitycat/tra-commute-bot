@@ -5,20 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 )
 
-// BriefSettings are the parts of the configuration this use case needs, already
-// validated and converted into domain types by internal/config.
+// BriefSettings are the calibration knobs that live in config.yaml: they
+// change rarely enough that an admin editing a file is the right interface
+// for them. The six trip parameters that change often (schedule, ready
+// time, deadline, route, max early leave) are not here — they are read fresh
+// from SettingsStore on every run instead, since the whole point of the
+// Telegram interface is that they can change without a restart.
 type BriefSettings struct {
-	Route      domain.Route
-	OriginID   string
-	DestID     string
-	ReadyLead  time.Duration
-	Deadline   domain.TimeOfDay
-	LastMile   time.Duration
 	Board      time.Duration
 	RiskMargin time.Duration
 
@@ -30,7 +29,6 @@ type BriefSettings struct {
 	CertificateMinDelay time.Duration
 
 	CompensationEnabled bool
-	MaxEarlyLeave       time.Duration
 	SevereThreshold     time.Duration
 }
 
@@ -63,26 +61,27 @@ type Result struct {
 }
 
 // Run executes steps 3 through 8 of §5.1 for the schedule that fired at
-// firedAt.
+// firedAt, using trip — the live settings read once by the caller (Tick.Run)
+// for this wake-up.
 //
 // Every data-collection failure is caught and turned into a degraded brief
 // rather than an early return. The only error Run reports is a failure to
 // deliver anything at all.
-func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string) (Result, error) {
-	params := b.params(firedAt)
+func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string, trip domain.Settings) (Result, error) {
+	params := b.params(firedAt, trip)
 	in := domain.BriefInput{
 		GeneratedAt:         firedAt,
 		Schedule:            scheduleName,
-		Route:               b.Settings.Route,
+		Route:               trip.Route(),
 		Params:              params,
 		CertificateEnabled:  b.Settings.CertificateEnabled,
 		CertificateMinDelay: b.Settings.CertificateMinDelay,
 		CompensationEnabled: b.Settings.CompensationEnabled,
-		MaxEarlyLeave:       b.Settings.MaxEarlyLeave,
+		MaxEarlyLeave:       trip.MaxEarlyLeave,
 		SevereThreshold:     b.Settings.SevereThreshold,
 	}
 
-	timetable, err := b.Timetable.DailyODTimetable(ctx, b.Settings.OriginID, b.Settings.DestID, firedAt)
+	timetable, err := b.Timetable.DailyODTimetable(ctx, trip.OriginID, trip.DestinationID, firedAt)
 	if err != nil {
 		b.Log.Error("timetable fetch failed", "err", err)
 		return b.deliver(ctx, domain.DegradedBrief(in, domain.Degradation{
@@ -134,30 +133,40 @@ func (b *Brief) Run(ctx context.Context, firedAt time.Time, scheduleName string)
 
 // RunDegraded sends the §9.3 warning for a run that never got as far as
 // fetching anything — the give-up path after the retry window expires.
-func (b *Brief) RunDegraded(ctx context.Context, firedAt time.Time, scheduleName, detail string) (Result, error) {
+func (b *Brief) RunDegraded(ctx context.Context, firedAt time.Time, scheduleName, detail string, trip domain.Settings) (Result, error) {
 	in := domain.BriefInput{
 		GeneratedAt: firedAt,
 		Schedule:    scheduleName,
-		Route:       b.Settings.Route,
-		Params:      b.params(firedAt),
+		Route:       trip.Route(),
+		Params:      b.params(firedAt, trip),
 	}
 	return b.deliver(ctx, domain.DegradedBrief(in, domain.Degradation{Stage: "run", Detail: detail}))
 }
 
-func (b *Brief) params(firedAt time.Time) domain.Params {
-	deadline := b.Settings.Deadline.On(firedAt)
-	ready := firedAt.Add(b.Settings.ReadyLead)
-	// A schedule late enough in the day pushes T_ready past a deadline
-	// expressed as a wall-clock time; the deadline then belongs to tomorrow.
-	// v0.1 never configures such a schedule, but the guard costs one branch
-	// and removes a whole class of nonsense results.
+// RunIncomplete sends a short reminder instead of a brief when the schedule
+// fired but the live settings are not yet complete enough to plan a
+// journey — most commonly right after a fresh install, before /route,
+// /ready, /deadline and /earlyleave have all been set once. This is not the
+// §9.3 degraded path: nothing failed, the user simply has not finished
+// telling the bot what it needs to know.
+func (b *Brief) RunIncomplete(ctx context.Context, firedAt time.Time, scheduleName string, missing []string) (Result, error) {
+	in := domain.BriefInput{GeneratedAt: firedAt, Schedule: scheduleName}
+	detail := fmt.Sprintf("尚未完成互動設定，缺少：%s。請用 Telegram 傳 /help 查看指令",
+		strings.Join(missing, "、"))
+	return b.deliver(ctx, domain.DegradedBrief(in, domain.Degradation{Stage: "settings", Detail: detail}))
+}
+
+func (b *Brief) params(firedAt time.Time, trip domain.Settings) domain.Params {
+	ready := trip.ReadyAt.On(firedAt)
+	deadline := trip.DeadlineAt.On(firedAt)
+	// A deadline earlier in the clock than T_ready belongs to the following
+	// day (e.g. a ready time past midnight for a very early schedule).
 	if deadline.Before(ready) {
 		deadline = deadline.AddDate(0, 0, 1)
 	}
 	return domain.Params{
 		Ready:       ready,
 		Deadline:    deadline,
-		LastMile:    b.Settings.LastMile,
 		BoardBuffer: b.Settings.Board,
 		RiskMargin:  b.Settings.RiskMargin,
 	}

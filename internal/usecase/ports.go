@@ -63,6 +63,17 @@ type StateStore interface {
 	Save(domain.TickState) error
 }
 
+// SettingsStore persists the six trip parameters the user sets over
+// Telegram (schedule, ready time, deadline, route, max early leave). It is
+// read fresh at the top of every tick and written by the Telegram command
+// handler, so a change takes effect on the very next wake-up with no
+// restart — the same "config lives in a file, not in the process" principle
+// the original systemd-timer design used for config.yaml.
+type SettingsStore interface {
+	Load() (domain.Settings, error)
+	Save(domain.Settings) error
+}
+
 // Archiver keeps the raw API responses. When a recommendation turns out to
 // have been wrong, this archive is the only way to find out why.
 type Archiver interface {

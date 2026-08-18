@@ -25,8 +25,17 @@
 - 不處理台鐵以外的運具（高鐵、客運、計程車）
 - 不做訂票、劃位
 - 不提供 Web UI 或行動 App
-- 不做多使用者、多路線支援（單人單路線硬編在設定檔）
+- 不做多使用者支援（單一 Telegram chat）
 - 不做 iOS 捷徑整合
+- 不處理「車站到達之後」的任何行程（捷運轉乘、步行、打卡等）。系統的職責在使用者踏出台鐵車站的那一刻結束；末端交通所需時間因人而異、因目的地而異，系統無從得知也不猜測（見 §1.3）
+
+### 1.3 設計邊界：只管鐵路，不猜測使用者的個別場景
+
+早期草稿曾以「打卡截止時間」與「車站到目的地的末端交通時間（`last_mile_minutes`）」推算真正的到達期限。這個設計後來被拿掉，原因不是技術限制，而是範圍界定：
+
+**系統的職責邊界就是台鐵本身——從「使用者能抵達起始站的時間」到「列車抵達目的地站的時間」。** 使用者是否要打卡、下車後要轉乘捷運還是走路、目的地是辦公室還是別的地方，這些屬於使用者的個別生活情境，系統不做假設，也不提供設定項讓使用者「模擬」這些場景。
+
+因此 `Deadline`（見 §7.1）現在直接定義為「抵達目的地車站的最晚可接受時間」，不再是「打卡時間」，也不再內建任何末端交通的估算值。這同時消除了系統中最不精確的一個人肉參數（原 `last_mile_minutes`）：不是因為它不重要，而是因為它不屬於這個系統該負責的範圍。使用者若要對應到打卡時間，應在設定 deadline 時自行扣除末端交通所需時間。
 
 ---
 
@@ -34,8 +43,8 @@
 
 > 我是住在桃園、在松江南京上班的通勤族。
 > 07:50 鬧鐘響，我伸手拿手機，Telegram 已經有一則訊息告訴我：
-> 「今天 2008 誤點 12 分，改搭 1136（誤點 3 分），08:19 桃園發車，09:05 抵台北，預計 09:25 打卡，還有 5 分鐘餘裕。」
-> 我於是知道要提早 5 分鐘出門，而不是照平常節奏出門後在月台上乾等。
+> 「今天 2008 誤點 12 分，改搭 1136（誤點 3 分），08:19 桃園發車，09:05 抵台北，還有 5 分鐘餘裕。」
+> 我於是知道要提早 5 分鐘出門，而不是照平常節奏出門後在月台上乾等。台北車站下車後要轉乘捷運還是走路到公司，是我自己的事，系統不管。
 
 ### 2.1 使用者的通勤路徑
 
@@ -44,9 +53,8 @@
   ↓ 30 分鐘（盥洗、早餐、步行/騎車到車站）
 08:20 抵達台鐵桃園站（可搭乘起始時間 T_ready）
   ↓ 搭乘台鐵（桃園 1080 → 臺北 1000）
-09:02 抵達台北車站（以 2008 準點為例）
-  ↓ 約 20 分鐘（捷運 台北車站 →(淡水信義線)→ 中山 →(松山新店線)→ 松江南京 + 步行到公司）
-09:22 打卡（截止 09:30）
+09:02 抵達台北車站（以 2008 準點為例，deadline 設為 09:10）
+  ↓ 系統的職責在此結束（見 §1.3）；轉乘捷運、步行到公司，皆為使用者自理
 ```
 
 ### 2.2 常搭班次
@@ -75,21 +83,20 @@
 | A1 | 通知時間 | 07:50（原始需求寫 8:50，為筆誤） | ✅ 已確認 |
 | A2 | 「9:24 到達桃園高鐵站」 | 應為「**08:24 到達台鐵桃園站**」 | ✅ 已確認 |
 | A3 | 「1336」 | 應為 **1136** 之筆誤 | ✅ 已確認 |
-| A4 | 抵達車站時間 T_ready | 預設 **08:20**（= 通知時間 + 30 分鐘準備），設定檔可調 | ✅ 已確認 |
-| A5 | 台北車站 → 打卡所需時間 | 預設 **20 分鐘**，設定檔可調 | ✅ 已確認 |
-| A6 | 打卡截止 | 09:30 | ✅ 已確認 |
+| A4 | 抵達車站時間 T_ready | 使用者透過 `/setup`／`/manage` 直接設定絕對時刻（例如 08:20），不再由「通知時間 + 準備分鐘數」推算（見 A14） | ✅ 已確認（v0.2 修訂） |
+| A5 | ~~台北車站 → 打卡所需時間~~ | **已移除。** 系統的職責邊界止於台鐵車站（見 §1.3），不管末端交通 | ⛔ 已移除（v0.2） |
+| A6 | 抵達目的地車站的最晚可接受時間（deadline） | 使用者透過 `/setup`／`/manage` 直接設定絕對時刻（例如 09:10），語意為「列車抵達目的地站」，不是「打卡」 | ✅ 已確認（v0.2 修訂） |
 | A7 | 候選班次範圍 | 不限於 2008/1136/1138，掃描時間窗內所有可搭班次；但這三班標記為「常搭」優先顯示 | 設計決策 |
-| A8 | 執行日與通知時間 | 使用者需能**自行調整星期與時刻**，補班日以手動日期清單處理，不接政府行事曆（見 §10.3） | ✅ 已確認 |
+| A8 | 執行日與通知時間 | 使用者透過 Telegram 指令**即時**設定星期與時刻（見 §10），不寫在設定檔、不需重啟；補班日／請假仍以設定檔的手動日期清單處理（見 A14） | ✅ 已確認（v0.2 修訂） |
 | A9 | **無法準時抵達時的行為** | 不得僅告知失敗，須主動計算補償方案。補償手段**僅限「提早出門」**，不納入計程車等替代末端路徑 | ✅ 已確認 |
 | A10 | **誤點證明** | 櫃檯可開立**當下所有誤點車次**的證明，不限實際搭乘班次（使用者實測）；唯僅能開立已到站列車。系統須指出該申請哪一班（見 §7.6） | ✅ 已確認（實測） |
 | A11 | 排序主鍵 | **以「實際抵達時間最早」為準**。因 A10 證明可跨車次開立，遲到歸屬不影響決策 | ✅ 已確認 |
 | A13 | **可搭乘車種限制** | 篩選依據是**是否接受電子票證**，與是否對號無關。普悠瑪、太魯閣不收電子票證須排除；自強、莒光可持卡上車（站票），照常納入候選且不加註記 | ✅ 已確認（使用者更正） |
-| A12 | 多路線支援 | v0.1 僅單向（桃園→臺北）。回程／多路線列入 v0.2，但**設定檔結構須預留擴充空間**（見下） | ✅ 已確認 |
+| A12 | 多路線／多排程支援 | **v0.2 起支援。** 一個「排程」（schedule）綁定一組通知時刻、星期、路線、`T_ready`、deadline，使用者可透過 Telegram 建立多組（例如上班通勤、下班通勤各一組），見 §10 | ✅ 已確認（原訂 v0.2，已提前納入本次修訂） |
+| A14 | **即時設定 vs. 全域設定的分界** | 「屬於某一條通勤規則本身」的參數（通知時刻、星期、路線、`T_ready`、deadline）透過 Telegram 指令即時設定，存於 settings 檔；「跨規則共用、不常變動」的校正參數（`risk_margin`、`board_buffer`、`max_early_leave`、車種篩選、TDX 節流等）留在 `config.yaml`，由管理者手動編輯 | ✅ 已確認 |
 
-> **A4 與 A5 是整個系統唯二的「人肉參數」，也是最容易造成推薦錯誤的來源。**
-> 建議上線後手動記錄一週的實際數據（幾點到車站、幾點打卡），再回頭校正。系統會在每日訊息尾端附上這兩個參數的當前值，方便隨時察覺偏差。
->
-> 特別注意 A5：`last_mile_minutes = 20` 是**捷運路徑**（台北車站 →(淡水信義線)→ 中山 →(松山新店線)→ 松江南京 + 步行）的估計值。依 A9，系統不搜尋替代末端路徑，因此此值為單一常數，其準確度直接決定所有遲到計算的正確性。
+> **A4 曾是整個系統最容易造成推薦錯誤的人肉參數之一，A5 是另一個。**
+> A5（末端交通時間）已隨 §1.3 的範圍界定移除；A4 現在由使用者直接設定絕對時刻，不再是「通知時間 + 估計準備時間」的推算值，減少了一層猜測。系統仍會在每日訊息尾端附上 `T_ready` 的當前值，方便隨時察覺是否需要調整。
 
 ---
 
@@ -99,7 +106,7 @@
 
 | 考量 | Go | Python |
 |---|---|---|
-| 部署 | ✅ 單一靜態執行檔，`scp` + `systemd` 即可，零執行期依賴 | ❌ 需管理 venv / uv；系統 Python 升級可能弄壞依賴 |
+| 部署 | ✅ 單一靜態執行檔，容器化零額外依賴 | ❌ 需管理 venv / uv；系統 Python 升級可能弄壞依賴 |
 | 啟動時間 | ✅ < 10 ms，適合 cron 短命任務 | ⚠️ ~100 ms（實務上無感） |
 | JSON 結構處理 | ✅ TDX 巢狀結構（`StationName.Zh_tw`）用 struct 定義清楚，欄位缺漏編譯期就能發現 | ⚠️ dict 存取容易 typo，執行期才炸 |
 | 時間運算 | ✅ `time.Time` 型別安全，時區明確 | ⚠️ naive/aware datetime 混用是經典坑 |
@@ -113,11 +120,22 @@
 
 > 🔑 **關鍵細節**：容器或極簡系統可能沒有 tzdata，導致 `time.LoadLocation("Asia/Taipei")` 失敗。在 `main.go` 加入 `import _ "time/tzdata"` 將時區資料庫內嵌進執行檔，一勞永逸。
 
-### 4.2 執行環境：Linode + systemd timer
+### 4.2 執行環境：Docker，長駐行程（v0.2 修訂）
 
-**不使用 GitHub Actions 作為主排程。** GitHub Actions 的 `schedule` 觸發延遲 5–20 分鐘是常態（整點尤其嚴重，因為全球排隊）。本系統從通知（07:50）到發車（08:26）只有 36 分鐘緩衝，延遲 15 分鐘即失去意義。systemd timer 可精確到秒，且 Linode 主機已存在，無額外成本。
+**v0.1 曾採用 systemd timer 每分鐘喚醒短命行程（見已移除的 §10.3 舊版），v0.2 起改為單一長駐行程，理由如下：**
 
-**GitHub Actions 僅用於 CI**：push 時跑 `go vet`、`go test`、`golangci-lint`，並在 tag 時交叉編譯產出 release binary。
+Telegram 即時設定介面（§10）需要持續監聽使用者傳來的指令（`getUpdates` long-polling），這與「每分鐘啟動、跑完即退出」的短命行程模型互斥——長輪詢的 HTTP 連線本身就需要跨越多次「tick」存活。與其硬拆成兩個行程互相協調狀態，不如讓單一行程內用兩個邏輯迴圈分工：
+
+- **通知迴圈**：`time.Ticker` 每分鐘觸發一次，執行原本 §10.3 的 tick + guard 判斷邏輯（是否命中任一排程、是否已送過、是否該重試）
+- **指令迴圈**：對 Telegram Bot API 發起長輪詢 `getUpdates`，解析使用者輸入的指令，更新設定檔
+
+兩個迴圈共享同一份即時設定（`SettingsStore`），並發存取規則見 §10.9。
+
+**不使用 GitHub Actions 作為排程觸發器。** GitHub Actions 的 `schedule` 觸發延遲 5–20 分鐘是常態；本系統的通知到發車間緩衝以分鐘計，這種延遲不可接受。長駐行程內用 `time.Ticker` 是最直接的替代方案，不需額外的排程基礎設施，且時區、精度完全由程式自己掌控。
+
+**GitHub Actions 僅用於 CI**：push 時跑 `go vet`、`go test`、`golangci-lint`，並在 tag 時建置並推送 Docker image。
+
+**部署形式**：單一容器，`docker run --restart unless-stopped` 或 `docker compose`。容器內沒有任何排程基礎設施（沒有 cron、沒有 systemd timer）——`main` 啟動後即進入前述兩個迴圈，直到收到終止訊號（`SIGTERM`）才優雅關閉。狀態、設定、存檔透過掛載的 volume 持久化，重啟容器不會遺失即時設定或當日的 tick guard 狀態。
 
 ### 4.3 通知通道：Telegram Bot
 
@@ -125,7 +143,7 @@
 - **排版能力最佳** — 可用 `<pre>` 區塊排等寬字比較表，這正是本系統的核心輸出形式
 - **訊息永久保留** — 可回頭查閱歷史，累積數月後能統計哪班車常誤點
 - **零成本、API 穩定**
-- **未來可擴充互動** — inline keyboard 做「重新查詢」按鈕不需改架構
+- **原生支援雙向互動** — Bot API 的 `getUpdates`／inline keyboard／reply keyboard 讓 v0.2 的即時設定介面（§10）不需要額外的 Web UI 或第三方框架
 
 已知限制：無法強制響鈴、可能被 iOS 專注模式攔截。**緩解措施**：在 iOS 設定中將 Telegram 加入「專注模式允許通知」清單，並為該對話開啟「時效性通知」。
 
@@ -134,47 +152,79 @@
 ## 5. 系統架構
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Linode (Ubuntu, TZ=Asia/Taipei)                    │
-│                                                     │
-│  systemd timer ──07:50:00 Mon-Fri──► systemd service│
-│                                            │        │
-│                                            ▼        │
-│                                    ┌───────────────┐│
-│                                    │ tracommute    ││
-│                                    │  (Go binary)  ││
-│                                    └───┬───────┬───┘│
-└────────────────────────────────────────┼───────┼────┘
-                                         │       │
-                    ┌────────────────────┘       └──────────┐
-                    ▼                                       ▼
-         ┌──────────────────────┐              ┌────────────────────┐
-         │  TDX API             │              │  Telegram Bot API  │
-         │  ・OAuth2 Token      │              │  sendMessage       │
-         │  ・DailyTrainTimetable│             └────────┬───────────┘
-         │  ・TrainLiveBoard    │                       │
-         │  ・StationLiveBoard  │                       ▼
-         └──────────────────────┘                  📱 iPhone
+┌───────────────────────────────────────────────────────────┐
+│  Docker container (TZ=Asia/Taipei)                         │
+│                                                             │
+│  ┌────────────────────── tracommute (Go binary) ─────────┐ │
+│  │                                                        │ │
+│  │   notify loop                    command loop          │ │
+│  │   time.Ticker(1min)              Bot API getUpdates    │ │
+│  │        │                              │                │ │
+│  │        ▼                              ▼                │ │
+│  │   DecideTick × 每條 schedule    指令解析（/setup ...） │ │
+│  │        │                              │                │ │
+│  │        └──────────┬──────────────────┘                 │ │
+│  │                    ▼                                    │ │
+│  │           SettingsStore（互斥序列化存取，見 §10.9）      │ │
+│  └───┬──────────────────────────────────────────────┬─────┘ │
+└──────┼──────────────────────────────────────────────┼───────┘
+       │                                              │
+       ▼                                              ▼
+┌──────────────────────┐              ┌────────────────────────┐
+│  TDX API              │              │  Telegram Bot API       │
+│  ・OAuth2 Token       │              │  ・sendMessage          │
+│  ・DailyTrainTimetable│              │  ・getUpdates（長輪詢） │
+│  ・TrainLiveBoard     │              │  ・answerCallbackQuery  │
+└───────────────────────┘              └────────────┬────────────┘
+                                                      │
+                                                      ▼
+                                                 📱 iPhone
 ```
 
-### 5.1 執行流程
+掛載的 volume（對應原 `storage.*` 設定）：
 
 ```
-1. 載入設定 + 環境變數（憑證）
-2. 判斷今日是否為執行日（週一~週五）→ 否則直接結束
+/var/lib/tra-commute/
+├── state.json      # 各 schedule 的 tick guard 狀態（§10.8，原 §10.3 之延續）
+├── settings.json    # 使用者透過 Telegram 即時設定的所有 schedule（§10.8）
+└── dumps/           # 原始 API 回應存檔，保留 30 天
+```
+
+### 5.1 通知迴圈執行流程
+
+以下流程由 `time.Ticker` 每分鐘觸發一次，對**每一條**已設定完成的 schedule 各執行一次 guard 判斷（§10.8），命中才會往下執行：
+
+```
+1. 讀取即時設定（SettingsStore）與狀態檔
+2. 對每條 schedule 執行 tick guard 判斷 → 未命中則跳過該條
 3. 取得 TDX access token（OAuth2 client_credentials）
 4. 循序抓取（間隔 request_interval_ms，遇 429 退避重試 — 見 §6.5）：
-   ├─ 今日 OD 時刻表（桃園 → 臺北）
+   ├─ 今日 OD 時刻表（該 schedule 的路線）
    └─ 列車即時位置動態（TrainLiveBoard）← 唯一誤點來源
 5. 合併資料 → 建立候選班次清單
 6. 執行排序演算法 → 產出推薦 + 備選
 7. 渲染 Telegram 訊息
 8. 發送（失敗則重試 3 次）
-9. 結構化日誌寫入 stdout → journald
+9. 結構化日誌寫入 stdout
 10. 原始 API 回應存檔（保留 30 天）
 ```
 
 **設計原則：步驟 3–8 任一步失敗，都必須送出降級通知**（見 §9.3），絕不可靜默結束。
+
+### 5.2 指令迴圈執行流程
+
+與通知迴圈並行運作，處理使用者透過 Telegram 傳入的指令：
+
+```
+1. 呼叫 getUpdates（長輪詢，timeout 依 Bot API 建議設 30–50 秒）
+2. 逐一處理收到的 update：
+   ├─ 文字指令（/setup /manage /route /ready /deadline /schedule
+   │  /earlyleave /status /help）→ 進入對應的指令狀態機（§10.2–10.5）
+   └─ callback query（inline keyboard 點擊）→ 依 callback data 更新
+      對應的暫存設定，並用 answerCallbackQuery 即時回饋
+3. 需要寫入設定時，透過 §10.9 的序列化存取更新 SettingsStore
+4. 記錄 update_id，下一輪 getUpdates 帶上以避免重複處理
+```
 
 ---
 
@@ -338,14 +388,15 @@ v3 並非「只回傳過去班次」，而是**幾乎不回傳任何東西**—�
 
 | 符號 | 意義 | 來源 |
 |---|---|---|
-| `T_ready` | 使用者最早可抵達桃園站的時刻 | 設定：通知時間 + `ready_lead_minutes` |
-| `T_deadline` | 打卡截止時刻（09:30） | 設定 |
-| `last_mile` | 台北車站 → 打卡所需分鐘數（20） | 設定 |
-| `board_buffer` | 進站到上車的緩衝分鐘數（2） | 設定 |
-| `risk_margin` | 判定「風險班次」的門檻分鐘數（3） | 設定 |
-| `sched_dep_i` | 班次 i 在桃園的表定發車時刻 | TDX 時刻表 |
-| `sched_arr_i` | 班次 i 在臺北的表定到達時刻 | TDX 時刻表 |
+| `T_ready` | 使用者最早可抵達起始站的時刻 | 該 schedule 的即時設定值，透過 `/setup`／`/manage` 設定（見 §10） |
+| `T_deadline` | 使用者可接受的**目的地車站**抵達時刻上限。系統的職責止於此，不管下車後的任何行程（見 §1.3） | 該 schedule 的即時設定值，透過 `/setup`／`/manage` 設定（見 §10） |
+| `board_buffer` | 進站到上車的緩衝分鐘數（2） | 設定檔（全域） |
+| `risk_margin` | 判定「風險班次」的門檻分鐘數（3） | 設定檔（全域） |
+| `sched_dep_i` | 班次 i 在起始站的表定發車時刻 | TDX 時刻表 |
+| `sched_arr_i` | 班次 i 在目的地站的表定到達時刻 | TDX 時刻表 |
 | `delay_i` | 班次 i 目前的誤點分鐘數 | TDX 即時動態 |
+
+> `T_ready`、`T_deadline` 與路線（起始站／目的地站）都屬於單一 schedule 的定義（見 §10.1），每條 schedule 各自獨立；`board_buffer`、`risk_margin` 等校正參數則是所有 schedule 共用的全域設定（§10.1 的 A14 分界）。
 
 ### 7.2 步驟一：建立候選清單
 
@@ -415,7 +466,7 @@ CATCHABLE   est_dep_i ≥ T_ready + board_buffer + risk_margin
 **軸二：遲到量（Lateness）** — 取決於 `est_arr`，是**連續量而非布林值**，且須拆分歸屬
 
 ```
-lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
+lateness_i     = max(0, est_arr_i − T_deadline)   總遲到（抵達目的地站，非打卡）
 ```
 
 把遲到量化成分鐘數（而非只是 LATE 標記）是滿足 A9 的關鍵：**遲到 2 分鐘和遲到 25 分鐘是完全不同的處境**，前者可能低調進辦公室就算了，後者得考慮提早出門或申請誤點證明。
@@ -442,7 +493,7 @@ lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
 ```
 
 > **為什麼 `lateness`（總遲到）不在排序鍵中？**
-> 在同一 Catchability 層內，`lateness = max(0, est_arr + last_mile − deadline)` 是 `est_arr` 的單調遞增函數——**按 `est_arr` 升冪排序，本身就等同於「總遲到分鐘數最小化」**。多列一個排序鍵不會改變結果，只會增加理解成本。
+> 在同一 Catchability 層內，`lateness = max(0, est_arr − deadline)` 是 `est_arr` 的單調遞增函數——**按 `est_arr` 升冪排序，本身就等同於「總遲到分鐘數最小化」**。多列一個排序鍵不會改變結果，只會增加理解成本。
 
 > **為什麼遲到歸屬不在排序鍵中？（A11）**
 > 早期草案曾把遲到拆成「可免責／不可免責」並以後者為主鍵，理由是「誤點證明只能開立實際搭乘車次」，因此選了慢車就得自負遲到。**該前提經使用者實測推翻**（見 §7.6）：證明可跨車次開立，遲到的可免責性與你選哪班車無關。歸屬概念因此整個移除。
@@ -496,7 +547,7 @@ lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
 | `certifiable > 0` 但未涵蓋 | `📄 可申請 {best} 次誤點證明（誤點 {certifiable} 分），但遲到 {lateness} 分，未必全數涵蓋` |
 | `C` 為空 | `⚠️ 今日全線無顯著誤點，遲到可能無法取得證明` |
 
-最後一種情況是唯一真正需要示警的：全線都準點、你卻仍會遲到，代表問題出在 `ready_lead_minutes` 設定或今天起晚了，而不是台鐵。這種時候沒有證明可開。
+最後一種情況是唯一真正需要示警的：全線都準點、你卻仍會遲到，代表問題出在這條 Schedule 的 `T_ready` 設得太晚或今天起晚了，而不是台鐵。這種時候沒有證明可開。
 
 > **候選集合的近似**：嚴格來說「已到站的誤點列車」應涵蓋所有抵達臺北的車次，而非僅限桃園→臺北時間窗內的候選。本規格採用候選集合作為近似，因為它們正是與你同時段、同路線的列車，誤點狀況最具代表性，且無需額外 API 呼叫。若日後發現漏報，可改查 `StationLiveBoard/Station/1000`。
 
@@ -512,32 +563,34 @@ lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
 
 ### 7.7 情境驗證
 
-以下情境必須全部通過測試（見 §11）。設定：`T_ready=08:20`、`board_buffer=2`、`risk_margin=3`，故 CATCHABLE 門檻為 `est_dep ≥ 08:25`。
+以下情境必須全部通過測試（見 §11）。設定：`T_ready=08:20`、`T_deadline=09:10`（抵達目的地站的最晚可接受時刻）、`board_buffer=2`、`risk_margin=3`，故 CATCHABLE 門檻為 `est_dep ≥ 08:25`。
+
+> `T_deadline=09:10` 對應舊版草稿中「打卡截止 09:30、末端交通 20 分」推算出的車站到達期限，僅用於讓以下情境的數字與舊版存在對照關係；系統本身不再做這個推算（見 §1.3）。
 
 **情境 A：全部準點**
 
-| 車次 | 表定發車 | 表定到北 | 誤點 | 預計發車 | 預計到北 | 打卡 | 分類 |
-|---|---|---|---|---|---|---|---|
-| 1136 | 08:16 | 08:57 | 0 | 08:16 | 08:57 | — | MISSED |
-| **2008** | 08:26 | 09:02 | 0 | 08:26 | 09:02 | 09:22 | **CATCHABLE** |
-| 1138 | 08:34 | 09:14 | 0 | 08:34 | 09:14 | 09:34 | CATCHABLE（遲 4 分） |
+| 車次 | 表定發車 | 表定到北 | 誤點 | 預計發車 | 預計到北 | 分類 |
+|---|---|---|---|---|---|---|
+| 1136 | 08:16 | 08:57 | 0 | 08:16 | 08:57 | MISSED |
+| **2008** | 08:26 | 09:02 | 0 | 08:26 | 09:02 | **CATCHABLE，準時** |
+| 1138 | 08:34 | 09:14 | 0 | 08:34 | 09:14 | CATCHABLE（遲 4 分） |
 
 → 推薦 **2008**。符合日常預期。✅
 
 **情境 B：全部誤點 10 分**
 
-| 車次 | 表定發車 | 表定到北 | 誤點 | 預計發車 | 預計到北 | 打卡 | 分類 |
-|---|---|---|---|---|---|---|---|
-| **1136** | 08:16 | 08:57 | +10 | 08:26 | 09:07 | 09:27 | **CATCHABLE，準時** |
-| 2008 | 08:26 | 09:02 | +10 | 08:36 | 09:12 | 09:32 | CATCHABLE（遲 2 分） |
-| 1138 | 08:34 | 09:14 | +10 | 08:44 | 09:24 | 09:44 | CATCHABLE（遲 14 分） |
+| 車次 | 表定發車 | 表定到北 | 誤點 | 預計發車 | 預計到北 | 分類 |
+|---|---|---|---|---|---|---|
+| **1136** | 08:16 | 08:57 | +10 | 08:26 | 09:07 | **CATCHABLE，準時** |
+| 2008 | 08:26 | 09:02 | +10 | 08:36 | 09:12 | CATCHABLE（遲 2 分） |
+| 1138 | 08:34 | 09:14 | +10 | 08:44 | 09:24 | CATCHABLE（遲 14 分） |
 
-→ 推薦 **1136**：實際抵北 09:07 早於 2008 的 09:12，且剛好能準時打卡。
+→ 推薦 **1136**：實際抵北 09:07 早於 2008 的 09:12，且剛好能準時抵達（未超過 09:10 deadline）。
 
 > ⚠️ **此結論推翻了原始需求的敘述。**
 > 需求訪談時提到「全部誤點 10 分鐘時，2008 仍會比 1136 快抵達台北」。實測時刻表顯示 **1136 表定 08:57 抵北，比 2008 的 09:02 早 5 分鐘**——1136 雖是區間車、行駛較久（41 vs 36 分），但因為發車早 10 分鐘，仍先抵達。誤點相同時這個差距不會改變。
 >
-> 更關鍵的是**這 5 分鐘決定了會不會遲到**：1136 讓你 09:27 打卡（準時），2008 則是 09:32（遲到 2 分）。
+> 更關鍵的是**這 5 分鐘決定了會不會遲到**：1136 抵北 09:07（準時），2008 則是 09:12（遲到 2 分）。
 >
 > 這正是為什麼演算法必須用 `est_arr` 實算，而不是預設「區間快一定比較快」。人的直覺在這裡是錯的。
 
@@ -548,7 +601,7 @@ lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
 | 1136 | 08:16 | 08:57 | +10 | 08:26 | 09:07 | CATCHABLE，準時 |
 | 2008 | 08:26 | 09:02 | +25 | 08:51 | 09:27 | CATCHABLE，遲 17 分 |
 
-→ 2008 抵北 09:27 + 20 分 = 09:47，遲到 17 分；1136 抵北 09:07 → 09:27 打卡，準時。
+→ 2008 抵北 09:27，遲到 17 分（09:27 − 09:10）；1136 抵北 09:07，準時。
 → **推薦 1136**，並警示「今日首選 2008 嚴重誤點」。✅
 
 **情境 D：邊界 — 只靠誤點才趕得上**
@@ -609,45 +662,31 @@ lateness_i     = max(0, est_arr_i   + last_mile − T_deadline)   總遲到
 
 ---
 
-## 8. 設定檔
+## 8. 設定檔（全域校正參數）
 
-`/etc/tra-commute/config.yaml`（權限 0644，**不含任何憑證**）
+**v0.2 起，設定檔只保留「跨 schedule 共用、不常變動」的校正參數**（A14）。原本寫在這裡的排程時刻、星期、路線、`T_ready`、deadline，現在都是**每條 schedule 各自的屬性**，透過 Telegram 即時設定，存在 §10.8 的 `settings.json`，不再是設定檔的一部分。這個檔案改動後不需重啟容器；但因為長駐行程目前只在啟動時讀取一次，**改動後需要重啟容器才會生效**（見下方提示）。
+
+容器內路徑：`/etc/tra-commute/config.yaml`（掛載進容器，權限 0644，**不含任何憑證**）
 
 ```yaml
-# ── 排程：改完存檔即生效，不需 sudo，不需 daemon-reload ──
-schedules:
-  - name: "平日通勤"
-    weekdays: [Mon, Tue, Wed, Thu, Fri]
-    at: "07:50"
-  - name: "補班日"                    # 手動列出，不接政府行事曆
-    dates: ["2026-09-26", "2026-12-19"]
-    at: "07:50"
-
-skip_dates: []                        # 請假、國定假日、出差
+# ── 排程的日期例外：不屬於任何一條 schedule，是所有 schedule 共用的行事曆 ──
+skip_dates: []                        # 請假、國定假日、出差：命中的日期不觸發任何 schedule
+extra_dates: []                       # 補班日等一次性工作日：手動列出，不接政府行事曆
 tick_tolerance_minutes: 2             # 容忍排程觸發稍晚仍視為命中
+retry_window_minutes: 10              # 失敗後的重試視窗（§10.8 之延續）
 
-timing:
-  ready_lead_minutes: 30              # 通知後多久能抵達桃園站 → T_ready = at + 30
-
-# v0.1 為單一路線。v0.2 將改為 journeys 清單，屆時 schedules 各項可帶
-# 選用的 journey 鍵；未指定者沿用預設路線，因此本結構不會成為破壞性變更。
+# 車種篩選（A13）：排除不接受電子票證的車種，與是否對號無關；
+# 自強、莒光可持悠遊卡搭乘站票，照常納入候選。所有 schedule 共用同一份規則。
 route:
-  origin_station_id: "1080"           # 桃園
-  origin_name: "桃園"
-  destination_station_id: "1000"      # 臺北
-  destination_name: "臺北"
-  usual_train_nos: ["2008", "1136", "1138"]  # 標記為「常搭」，不限制候選範圍
+  usual_train_nos: ["2008", "1136", "1138"]  # 標記為「常搭」，不限制候選範圍；
+                                              # 若各 schedule 路線不同，此清單對不相關的路線無效
   lookback_minutes: 30                # 往前掃描（撈取因誤點而尚未發車的班次）
   lookahead_minutes: 60
-  # A13：排除不接受電子票證的車種（與是否對號無關）
-  # 自強、莒光可持悠遊卡搭乘站票，照常納入候選
-  excluded_train_type_ids: []              # ⏳ 以 /TrainType 查證後填入
+  excluded_train_type_ids: ["1101", "1107"]   # 1101 太魯閣、1107 普悠瑪（已由 /TrainType 查證）
   excluded_train_type_keywords: ["普悠瑪", "太魯閣"]   # 名稱比對，防禦性後備
   unknown_train_type_policy: "include_and_flag"       # include_and_flag | exclude
 
 constraints:
-  clock_in_deadline: "09:30"
-  last_mile_minutes: 20               # 台北車站 →中山→ 松江南京 + 步行
   boarding_buffer_minutes: 2
   risk_margin_minutes: 3
 
@@ -658,15 +697,28 @@ certificate:                          # §7.6 誤點證明
 
 compensation:                         # §7.8 遲到補償
   enabled: true
-  max_early_leave_minutes: 15         # 最多可接受提早多久出門（已確認）
   severe_delay_threshold: 30          # 遲到超過此值升級為最高警示
+  # max_early_leave_minutes 已移至各 schedule 的即時設定（/earlyleave），
+  # 因為「能接受提早多久出門」因人、因這條通勤規則而異，不是全域常數
+
+api:
+  request_interval_ms: 1500
+  timeout_seconds: 15
 
 output:
   max_alternatives: 4
   timezone: "Asia/Taipei"
+
+storage:
+  state_path: "/var/lib/tra-commute/state.json"
+  settings_path: "/var/lib/tra-commute/settings.json"   # §10.8：所有 schedule 的即時設定
+  archive_dir: "/var/lib/tra-commute/dumps"
+  archive_retain_days: 30
 ```
 
-憑證一律走環境變數，存於 `/etc/tra-commute/env`（權限 **0600**，owner `tracommute`）：
+> **`usual_train_nos` 與 `excluded_train_type_*` 目前仍是全域設定，即使 v0.2 已支援多路線。** 若使用者的多條 schedule 路線不同（例如上班、下班方向相反），這份共用清單對其中一條路線可能無意義（一個車次編號通常只在一個方向出現，不會誤判到另一條路線）。這是已知的簡化：v0.3 若要讓「常搭班次」隨路線分開設定，需要把這幾個欄位移進 §10.1 的 Schedule 結構，屆時再處理。目前保持全域是因為單一使用者同時維護的路線數量很小，重複設定的成本低於架構複雜度的成本。
+
+憑證一律走環境變數，透過容器的 env file 或 `docker run -e` 傳入，**不寫進 `config.yaml`**：
 
 ```bash
 TDX_CLIENT_ID=xxxxx
@@ -675,7 +727,7 @@ TELEGRAM_BOT_TOKEN=xxxxx
 TELEGRAM_CHAT_ID=xxxxx
 ```
 
-> 憑證**絕不進 git**。`.gitignore` 加入 `env`、`*.local.yaml`。
+> 憑證**絕不進 git**。`.gitignore` 加入 `.env`、`*.local.yaml`。
 
 ---
 
@@ -739,7 +791,7 @@ Telegram `sendMessage`，`parse_mode: HTML`。比較表用 `<pre>` 保持等寬�
 
 建議搭乘 2008 區間快
 桃園 08:26 → 臺北 09:02
-準點 · 預計 09:22 打卡（餘裕 8 分）
+準點 · 預計 09:02 抵達（餘裕 8 分）
 
 其他選項
 NO.   DLY    DEP    ARR
@@ -750,7 +802,7 @@ NO.   DLY    DEP    ARR
 DLY 誤點　DEP 發車　ARR 抵北
 REC 建議　LATE 遲到　GONE 已過
 
-以 08:20 抵站、末端 20 分計算
+以 08:20 抵站計算
 資料更新 07:49:53
 ```
 
@@ -760,7 +812,7 @@ REC 建議　LATE 遲到　GONE 已過
 - 狀態欄置於**行尾**（見 §9.0 之三），值為 `REC` 建議、`RISK` 風險、`LATE` 遲到、`GONE` 已過、`OK` 可搭。圖例只列出當次訊息實際出現的值
 - 無即時資料的班次，`DLY` 欄顯示 `--` 而非 `+0`，避免把假設誤讀為觀測；表格下方以文字說明
 - 常搭班次（`usual_train_nos`）即使被排序擠出名額也必須出現。看到「2008 已過」是使用者要的資訊；表上找不到 2008 則會被誤讀成程式壞了
-- 末行固定顯示 `T_ready` 與 `last_mile` 參數，方便察覺參數失準
+- 末行固定顯示 `T_ready`，方便察覺這個即時設定值是否需要調整
 
 ### 9.2 遲到警示模式（需求 A9 / A10）
 
@@ -771,11 +823,11 @@ REC 建議　LATE 遲到　GONE 已過
 
 照常出門搭 1138
 誤點 +2 · 桃園 08:36 → 臺北 09:16
-預計 09:36 打卡 · 遲到 6 分
+遲到 6 分（deadline 09:10）
 
 提早出門
 提早 1 分（08:19 到站）可搭 1136
-誤點 +8 · 抵北 09:05 → 09:25 打卡
+誤點 +8 · 抵北 09:05
 這樣做可以準時 · 較照常出門少遲到 6 分
 
 誤點證明
@@ -791,7 +843,7 @@ NO.   DLY    DEP    ARR  MIN
 DLY 誤點　DEP 發車　ARR 抵北　MIN 遲到分鐘
 REC 建議　RISK 風險　LATE 遲到
 
-以 08:20 抵站、末端 20 分計算
+以 08:20 抵站計算
 ```
 
 （實際訊息中「今日會遲到」「提早出門」「誤點證明」「全部班次」及遲到分鐘數為 `<b>` 粗體。）
@@ -823,7 +875,7 @@ NO.     DEP    ARR
 
 請自行以台鐵 App 確認誤點狀況。
 
-以 08:20 抵站、末端 20 分計算
+以 08:20 抵站計算
 ```
 
 （「通勤簡報產生失敗」與「表定時刻（未套用誤點）」為 `<b>` 粗體，表格為 `<pre>`。）
@@ -835,190 +887,318 @@ NO.     DEP    ARR
 | TDX OAuth 失敗 | 送出純警示訊息，無時刻資料 |
 | 時刻表取得失敗 | 同上 |
 | 即時動態取得失敗 | **仍送出表定時刻表**，明確標示「未套用誤點」 |
-| Telegram 送出失敗 | 重試 3 次（指數退避）；仍失敗則寫入 journald `ERROR`，退出碼 1 |
+| Telegram 送出失敗 | 重試 3 次（指數退避）；仍失敗則以 `ERROR` 等級寫入結構化日誌，行程不因此結束 |
 
-> systemd 可設定 `OnFailure=` 掛一個備援通知單元（例如寄信到自己信箱），處理「連 Telegram 都掛掉」的極端情況。v0.2 再做。
+> 容器可設定外部監控（例如 healthcheck 搭配告警服務）處理「連 Telegram 都掛掉」的極端情況，超出本系統自身職責。v0.3 視需要再評估。
 
 ---
 
-## 10. 專案結構與部署
+## 10. 即時設定介面與專案結構
 
-### 10.1 目錄結構
+v0.1 的排程規則寫在 `config.yaml`，改一次要編輯檔案；v0.2 起改為透過 Telegram 指令即時設定，且**一個使用者可以同時維護多條獨立的通勤規則**（例如「上班通勤」「下班通勤」各一條），這是本節的核心。
+
+### 10.1 核心概念：Schedule
+
+一條 **Schedule** 就是一句「每天 07:50 通知我，08:20 後發車、桃園 → 臺北、09:10 前抵達的列車動態」，包含：
+
+| 欄位 | 意義 | 建立時的步驟／編輯時的選單項目 |
+|---|---|---|
+| `name` | 使用者取的名字（例如「上班通勤」），用於 `/manage` 列表與狀態檔的鍵 | 取名字 ／「改名字」 |
+| `notify_weekdays` `notify_at` | 通知的星期與時刻 | 選星期＋選時刻 ／「改通知時間」 |
+| `origin` `destination` | 路線（起始站／目的地站） | 選站（兩次） ／「改路線」 |
+| `ready_at`（T_ready） | 最早可抵達起始站的時刻 | 選時刻 ／「改 T_ready」 |
+| `deadline_at`（T_deadline） | 抵達目的地站的最晚可接受時刻 | 選時刻 ／「改 deadline」 |
+| `max_early_leave_minutes` | 這條規則能接受的補償方案最多提早幾分鐘出門（§7.8） | 選分鐘數 ／「改提早出門上限」 |
+
+所有欄位只透過 `/setup`（建立時，§10.5）與 `/manage`（編輯時，§10.6）兩個入口設定，兩者共用同一套子流程（§10.4），不存在對應單一欄位的獨立指令。
+
+**一條 Schedule 就是 §7 演算法一次完整執行所需的全部輸入**（路線決定候選清單，`T_ready`／`T_deadline` 決定分類與遲到量）。多條 Schedule 之間互不影響，各自獨立判斷是否命中、獨立執行、獨立記錄狀態。
+
+**不屬於 Schedule、留在 `config.yaml` 的全域校正參數**（A14）：`board_buffer`、`risk_margin`、車種篩選、誤點證明與嚴重延誤門檻、TDX 節流參數等——這些是「所有 Schedule 共用、極少變動」的旋鈕，改動的風險與頻率都不適合開放成即時指令。
+
+> **為什麼路線不放進全域設定？** 因為使用者明確會有「上班」「下班」兩條方向相反的規則，路線是 Schedule 之間**最主要的差異**，理應跟通知時刻、`T_ready`／`T_deadline` 一起被視為同一條規則的組成部分，而不是切開放在兩個地方。
+
+### 10.2 設計原則：只有 `/setup` 與 `/manage`，不留殘缺設定
+
+**使用者只需要記兩個指令。** 建立一條新規則用 `/setup`，查看／修改／刪除既有規則用 `/manage`；其餘欄位層級的操作（改路線、改時刻……）都不是獨立指令，而是這兩者之下的選單動作。這比 v0.2 初版草案（`/route` `/ready` `/deadline` `/schedule` `/earlyleave` 各自成一個指令）少記五個指令，也不需要「這個指令現在作用在哪一條 Schedule 上」這種隱性狀態。
+
+三個不變式貫穿整個互動設計：
+
+1. **一條 Schedule 只有「不存在」與「完整」兩種狀態，沒有中間態。** `/setup` 全部欄位問完、使用者按下「確認建立」才會寫進 `settings.json`；中途任何一步按 `/cancel` 或逾時，整段流程作廢，不寫入任何東西。不會出現「已經有名字、但還沒有路線」這種讓 tick guard 得額外判斷的殘缺 Schedule。
+2. **修改單一欄位複用建立時的同一套問答，而非另開一套。** `/manage` 選定某條 Schedule 後選「編輯路線」，走的就是 `/setup` 裡「起始站／目的地站」那兩個問題，差別只是最後只覆寫路線這一個欄位、其餘不動。這樣站名互動、時間格式驗證只需要寫一次。
+3. **每個畫面都用按鈕收尾，不要求使用者記語法。** 開放式輸入（站名關鍵字、`HH:mm`、分鐘數）無法避免，但輸入之後、以及每個子流程結束後，一律回到 inline keyboard 選單，讓使用者靠點擊完成下一步，不需要回去翻 `/help`。
+
+因為系統尚未上線，不需要相容舊版 `/route` `/ready` `/deadline` `/schedule` `/earlyleave` 指令；這幾個指令**直接移除**，不做重導向。
+
+### 10.3 指令總覽
+
+| 指令 | 作用 |
+|---|---|
+| `/setup` | 引導式建立**一條新的** Schedule，一次問完全部欄位，中途可 `/cancel` |
+| `/manage` | 列出目前所有 Schedule；選擇其中一條後，用選單編輯任一欄位或刪除整條 |
+| `/status` | 列出所有 Schedule 目前的完整度與最近一次通知結果 |
+| `/help` | 列出以上指令與簡短說明 |
+| `/cancel` | 中止目前進行中的引導流程（`/setup` 或 `/manage` 的編輯子流程），不留任何變更 |
+
+尚未建立任何 Schedule 時，`/status` 與每日固定的提醒訊息（沿用既有 `RunIncomplete` 行為）都會引導至 `/setup`。因為 Schedule 一旦存在必定完整（不變式 1），guard（§10.7）不再需要檢查「這條 Schedule 是否填滿欄位」，只需要檢查「有沒有任何 Schedule 存在」。
+
+### 10.4 共用子流程
+
+`/setup` 的建立流程與 `/manage` 的欄位編輯，共用以下四段問答。每一段結束都回到呼叫它的上層選單（建立流程的下一步，或編輯流程的欄位選單），不會把使用者晾在一個死畫面。
+
+**A. 選站**（用於路線的起始站／目的地站）
+
+```
+「請輸入站名關鍵字（中文、英文、或站碼皆可）」
+ → 使用者輸入文字
+ → domain.MatchStations 模糊比對，結果：
+     0 筆 → 「找不到符合的車站，換個關鍵字試試？」，停在原問題
+     1 筆 → 直接帶入，不需要確認（唯一命中沒有歧義）
+     2 筆以上 → inline keyboard 列出前幾筆站名供選擇；
+                找不到想要的可按 [ 重新輸入 ]
+```
+
+**B. 選時刻**（用於 `T_ready`、`T_deadline`、通知時刻）
+
+```
+「請輸入時刻，格式 HH:mm（例如 08:20）」
+ → 格式錯誤 → 直接回覆錯誤訊息與範例，停在原問題重試
+ → 格式正確 → 帶入，往下一步
+```
+
+24×60 種選項不適合做成按鈕清單，用文字輸入＋即時格式驗證，比強行做時間選擇器的維護成本更低。
+
+**C. 選星期**（用於通知星期）
+
+```
+選擇通知星期（可多選，完成後按下方按鈕）：
+[ ] 一   [ ] 二   [ ] 三
+[ ] 四   [ ] 五   [ ] 六   [ ] 日
+[ 完成 ]
+```
+
+星期按鈕與「完成」都是 callback query；點星期只切換打勾狀態並就地更新（`editMessageReplyMarkup`），點「完成」才真正帶入下一步。至少要勾選一天才能按「完成」，否則提示「至少選一天」。
+
+**D. 選分鐘數**（用於 `max_early_leave_minutes`）
+
+```
+「遲到時最多能接受提早幾分鐘出門？（輸入數字，例如 15）」
+ → 非數字或負數 → 回覆錯誤訊息，停在原問題重試
+ → 合法數字 → 帶入
+```
+
+### 10.5 `/setup`：新建一條 Schedule
+
+```
+/setup
+ → 「幫這條規則取個名字」（純文字輸入，例如「上班通勤」；重複名稱會提示重新輸入）
+ → 「起始站？」（子流程 A）
+ → 「目的地站？」（子流程 A）
+ → 「最早幾點能到 {起始站}？」（子流程 B）
+ → 「最晚幾點要抵達 {目的地站}？」（子流程 B；若早於或等於上一步的時刻，提示重新輸入）
+ → 「哪幾天通知你？」（子流程 C）
+ → 「幾點通知你？」（子流程 B）
+ → 「遲到時最多能接受提早幾分鐘出門？」（子流程 D）
+ → 顯示完整摘要卡片：
+     ┌ 上班通勤 ┐
+     桃園 → 臺北
+     通知：一二三四五 07:50
+     T_ready 08:20　deadline 09:10
+     提早出門上限 15 分
+     [ 確認建立 ]  [ 重新開始 ]  [ /cancel ]
+ → 按下「確認建立」才寫入 settings.json，並附一句「已建立，會在下次符合條件時通知你」
+   + 立即顯示 §10.6 的「建立後選單」
+```
+
+「重新開始」不是回上一步，而是整段作廢重來——這條流程本來就短（七個問題），回頭修正單一步驟的價值低於維持「全有或全無」這個不變式的簡單性。真正需要精修單一欄位的情境，交給 `/manage`。
+
+流程進行中彈出的任何一步都可用 `/cancel` 中止，不留任何變更；輸入逾時（例如 10 分鐘無回應）視同 `/cancel`。
+
+### 10.6 `/manage`：管理現有 Schedule
+
+```
+/manage
+ → 列出所有 Schedule（inline keyboard，一條一個按鈕，顯示名字 + 通知時刻 + 路線摘要）
+     [ 上班通勤：一二三四五 07:50　桃園→臺北 ]
+     [ 下班通勤：一二三四五 17:30　臺北→桃園 ]
+     [ ➕ 新增一條規則 ]        ← 等同直接進入 /setup，讓使用者不必再打一次指令
+ → 選擇一條後，顯示該條的完整設定卡片與編輯選單：
+     ┌ 上班通勤 ┐
+     桃園 → 臺北
+     通知：一二三四五 07:50
+     T_ready 08:20　deadline 09:10
+     提早出門上限 15 分
+     [ 改路線 ]        [ 改 T_ready ]     [ 改 deadline ]
+     [ 改通知時間 ]    [ 改提早出門上限 ] [ 改名字 ]
+     [ 🗑 刪除此規則 ]  [ ⬅ 返回列表 ]
+ → 點選「改路線」等編輯項目，走 §10.4 對應的子流程，只覆寫這一個欄位；
+   完成後回到本條 Schedule 的設定卡片（不是回到列表），方便連續調整多個欄位
+ → 「刪除此規則」二次確認（[ 確認刪除 ] / [ 取消 ]）：確認後清空狀態檔中這條
+   規則的歷史記錄，屬於不可逆操作
+```
+
+「改名字」是唯一沒有對應建立步驟子流程的編輯項——名字在 `/setup` 是自由文字輸入，這裡沿用同一種輸入方式，並檢查是否與其他 Schedule 重複。
+
+### 10.7 操作體驗的補強建議
+
+以下是把 §10.5／§10.6 落地時，建議一併考慮的細節，避免「功能都做了、但用起來卡卡的」：
+
+1. **建立完成後不要停在摘要畫面。** `/setup` 確認建立後，除了「已建立」的回覆，緊接著再送一則「建立後選單」：`[ ➕ 建立另一條規則 ] [ 📋 查看所有規則 ] [ ✅ 完成 ]`。使用者常見的下一動是「再設一條下班的」，不應該讓他們自己想起要打 `/manage`。
+2. **`/manage` 的列表要顯示夠不夠用的摘要，讓使用者不用逐條點進去確認。** 名字 + 通知時刻 + 路線（如上方範例）通常足夠分辨；若之後 Schedule 數量變多，可考慮加上「最近一次通知結果」的小圖示（✅/⚠️）。
+3. **輸入驗證的錯誤訊息要具體到「哪裡錯、該怎麼改」，不是只說「格式錯誤」。** 例如 deadline 早於 T_ready 時，直接說「deadline 09:00 早於 T_ready 09:10，請輸入 09:10 之後的時刻」，比「時間設定不合理」更快讓使用者知道下一步。
+4. **`/cancel` 與逾時中止後，回覆要說清楚「什麼都沒被儲存」。** 使用者中途放棄時最怕的是「不知道系統記了什麼」，一句「已取消，未做任何變更」比沉默或只回「OK」更能建立信任。
+5. **編輯流程完成後的提示要點出「什麼改了、從什麼變成什麼」。** 例如「T_ready 已從 08:20 改為 08:10」，而不是只說「已更新」——使用者剛剛做的操作應該立刻能對照結果，尤其是在連續編輯多個欄位時容易搞混改了哪些。
+6. **`/help` 應該根據目前是否已有 Schedule 給出不同文案。** 尚未建立任何 Schedule 時，`/help` 的第一句應該直接推向 `/setup`（「你還沒有設定任何通勤規則，用 /setup 建立第一條」），而不是列出一份不分情境的指令清單。
+7. **`/manage` 刪除確認時，附帶顯示「最近一次通知結果」而不只是名字。** 使用者若看到「上班通勤（今天已成功通知）」，會比單純「上班通勤」更謹慎考慮是否真的要刪。
+
+### 10.8 儲存：settings.json 與 state.json
+
+`settings.json`（`SettingsStore`，見 §5 的 volume 掛載）改為**清單**，取代 v0.1 單一結構：
+
+```json
+{
+  "schedules": [
+    {
+      "name": "上班通勤",
+      "notify_weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      "notify_at": "07:50",
+      "origin_id": "1080", "origin_name": "桃園",
+      "destination_id": "1000", "destination_name": "臺北",
+      "ready_at": "08:20",
+      "deadline_at": "09:10",
+      "max_early_leave_minutes": 15
+    },
+    {
+      "name": "下班通勤",
+      "notify_weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      "notify_at": "17:30",
+      "origin_id": "1000", "origin_name": "臺北",
+      "destination_id": "1080", "destination_name": "桃園",
+      "ready_at": "18:00",
+      "deadline_at": "18:50",
+      "max_early_leave_minutes": 10
+    }
+  ]
+}
+```
+
+`state.json`（tick guard 狀態）沿用 v0.1 的鍵值結構，但鍵改為 Schedule 的 `name`（使用者自訂，取代原本設定檔裡的固定排程名），語意不變：
+
+```json
+{
+  "last_success": { "上班通勤": "2026-08-18", "下班通勤": "2026-08-18" },
+  "last_attempt": { "上班通勤": "2026-08-18T07:50:03+08:00" },
+  "attempt_count_today": { "上班通勤": 1 }
+}
+```
+
+guard 邏輯（原 §10.3，行為不變，只是觸發方式從「systemd 每分鐘啟動一個新行程」改為「長駐行程內的 `time.Ticker` 每分鐘觸發一次」）：
+
+```
+每分鐘觸發，對每一條 Schedule 各自執行：
+  ├─ 這條 Schedule 尚未填滿全部欄位？        → 跳過（改送每日提醒，見 §10.2）
+  ├─ 今天在全域 skip_dates 內？              → 跳過
+  ├─ 命中這條 Schedule 的 notify_weekdays／全域 extra_dates？ → 否則跳過
+  ├─ 現在時刻 ∈ [notify_at, notify_at + tick_tolerance]？    → 否則跳過
+  ├─ 讀狀態檔：今天這條 Schedule 已成功送出？ → 是則跳過
+  └─ 執行完整流程（§5.1）→ 成功後寫入狀態檔
+```
+
+重試語意不變：同一天同一條 Schedule 若尚未成功，允許在 `[notify_at, notify_at + retry_window_minutes]`（全域設定，預設 10 分）內於每次 tick 重試；超過視窗即放棄並發出降級通知（§9.3）。
+
+### 10.9 併發存取：單一 goroutine 序列化
+
+通知迴圈（每分鐘讀取所有 Schedule 判斷是否該發送）與指令迴圈（隨時可能因使用者操作而寫入某條 Schedule）會同時存取 `settings.json`。若不做任何協調，可能出現「通知迴圈讀到一半、指令迴圈正在寫入」的競態，讀到不完整或不一致的設定。
+
+**採用方案：一個專屬 goroutine 獨佔 `SettingsStore` 的存取權，其他程式碼透過 channel 提交請求。**
+
+```go
+type settingsRequest struct {
+    op     func(domain.SettingsList) (domain.SettingsList, any) // 讀取或讀取+修改
+    result chan<- any
+}
+
+// 只有這一個 goroutine 呼叫 SettingsStore.Load / Save，
+// 通知迴圈與指令迴圈都透過 requests channel 提交操作，
+// 用回傳的 result channel 拿結果。
+func runSettingsActor(store usecase.SettingsStore, requests <-chan settingsRequest) {
+    for req := range requests {
+        current, _ := store.Load()
+        updated, result := req.op(current)
+        store.Save(updated) // 即使 op 只是讀取，重寫同樣的值也是安全的
+        req.result <- result
+    }
+}
+```
+
+比起直接用 `sync.Mutex` 包住 `SettingsStore`，選擇單一 goroutine + channel 的理由：
+
+- **讀取與修改天然是同一個原子操作**：指令迴圈的「讀出目前設定 → 檢查名稱是否重複 → 寫回新增後的清單」必須整段不被打斷，用 mutex 也做得到，但 actor 模式把這個不變式寫進型別（呼叫者只能傳一個 `func(current) (updated, result)`，無法忘記解鎖或漏改某個分支）
+- **避免長輪詢阻塞寫入**：指令迴圈在等待 `getUpdates` 回應時不持有任何鎖，只有真正需要讀寫設定的那一刻才透過 channel 排隊
+- **與現有 `usecase.SettingsStore` 介面相容**：actor 內部仍是呼叫既有的 `Load()`/`Save()`，不需要改介面定義，只是呼叫者從「直接呼叫」變成「透過 channel 委派」
+
+**不變式**：整個行程中只有這一個 goroutine 呼叫 `SettingsStore.Load`／`Save`。程式碼審查與未來的重構都必須維持這一點；一旦有第二個呼叫路徑繞過 actor 直接存取檔案，這一節的保證就失效。
+
+### 10.10 目錄結構
 
 ```
 tra-commute-bot/
 ├── cmd/tracommute/
-│   └── main.go                 # 進入點、旗標解析、時區內嵌
+│   └── main.go                 # 進入點、旗標解析、時區內嵌、長駐行程啟動
 ├── internal/
 │   ├── config/
-│   │   └── config.go           # YAML + env 載入、驗證
-│   ├── tdx/
-│   │   ├── auth.go             # OAuth2 client_credentials
-│   │   ├── client.go           # HTTP client、循序節流、429 退避
-│   │   ├── models.go           # v3 回應 struct
-│   │   └── timeparse.go        # HH:mm / HH:mm:ss 雙格式解析（見 §6.6）
-│   ├── planner/
-│   │   ├── planner.go          # §7 演算法本體
-│   │   ├── classify.go         # 可搭乘性 × 準時性 二維分類
-│   │   ├── compensate.go       # §7.8 遲到補償方案搜尋
-│   │   └── certificate.go      # §7.6 遲到歸屬拆分
-│   ├── scheduler/
-│   │   ├── scheduler.go        # §10.3 排程規則比對
-│   │   └── state.go            # 狀態檔讀寫、重試視窗判斷
-│   │   └── planner_test.go     # 表格驅動測試（情境 A–E）
-│   ├── notify/
-│   │   ├── telegram.go
-│   │   └── render.go           # §9 訊息渲染
-│   └── clock/
-│       └── clock.go            # Clock 介面，供測試注入固定時間
+│   │   └── config.go           # 全域設定 YAML + env 載入、驗證（§8）
+│   ├── domain/
+│   │   ├── train.go / plan.go / classify.go / ...   # §7 演算法本體
+│   │   ├── settings.go         # Schedule／Settings 模型（§10.1）
+│   │   ├── station.go          # MatchStations 模糊比對（§10.3 站名互動）
+│   │   └── schedule.go         # tick guard 判斷（§10.8）
+│   ├── usecase/
+│   │   ├── ports.go            # SettingsStore／StateStore 等介面
+│   │   ├── brief.go            # fetch → plan → render → deliver
+│   │   └── tick.go             # guard、執行、記錄
+│   ├── adapter/
+│   │   ├── tdx/                 # TDX v3 client
+│   │   ├── telegram/            # sendMessage、getUpdates、inline keyboard
+│   │   ├── render/              # §9 訊息渲染
+│   │   ├── settingsfile/        # settings.json 讀寫（§10.8）
+│   │   ├── statefile/           # state.json 讀寫
+│   │   └── archive/             # 原始回應存檔
+│   ├── command/                 # 指令解析與狀態機（§10.2–10.7，待實作）
+│   │   ├── router.go            # 依指令文字／callback data 分派
+│   │   ├── setup.go             # /setup 引導流程（§10.5）
+│   │   ├── manage.go            # /manage 編輯與刪除（§10.6）
+│   │   ├── flows.go             # 共用子流程：選站／選時刻／選星期／選分鐘數（§10.4）
+│   │   └── keyboard.go          # inline keyboard 建構與 callback 解析
+│   └── platform/clock/          # Clock 介面，供測試注入固定時間
 ├── configs/
 │   └── config.example.yaml
-├── deploy/
-│   ├── tra-commute.service
-│   ├── tra-commute.timer
-│   └── install.sh
+├── Dockerfile
+├── docker-compose.yml
 ├── .github/workflows/ci.yml
 ├── go.mod
 └── README.md
 ```
 
-### 10.2 CLI 旗標
+> `internal/command` 為 v0.2 新增，尚未實作（本次規格修訂僅定案設計方向）；其餘目錄對應既有程式碼的 clean architecture 分層（domain 不依賴外部、usecase 宣告介面、adapter 實作介面、cmd 組裝）。
+
+### 10.11 CLI 旗標
 
 ```
 tracommute [flags]
 
-  -config string    設定檔路徑（預設 /etc/tra-commute/config.yaml）
-  -at string        模擬指定時刻執行，格式 "2006-01-02T15:04"（測試用）
-  -dry-run          計算並印出訊息到 stdout，不發送 Telegram
-  -verbose          輸出完整 API 回應
+  -config string    全域設定檔路徑（預設 /etc/tra-commute/config.yaml）
+  -at string        模擬指定時刻執行單次 tick，格式 "2006-01-02T15:04"（測試用）
+  -dry-run          計算並印出訊息到 stdout，不發送 Telegram，不寫入狀態
+  -force            略過排程判斷，對已完成設定的第一條 Schedule 立即執行一次
+  -env-file string  本機開發用的 KEY=VALUE 憑證檔（預設 .env，空字串停用）
+  -verbose          輸出 debug 等級日誌與完整 API 回應
+  -version          印出版本後結束
 ```
 
-> 🔑 **`-at` 與 `-dry-run` 是必要功能，不是加分項。** 這支程式一天只在 07:50 跑一次，若沒有辦法在任意時間模擬執行，你將完全無法除錯——遇到問題只能等隔天再看一次。`clock.Clock` 介面必須從第一天就設計進去，事後補會很痛。
+> 🔑 **`-at` 與 `-dry-run` 是必要功能，不是加分項。** 長駐行程不代表除錯方式改變——你仍然需要在任意時刻模擬「現在是某條 Schedule 的通知時間」，而不必等到真的排到那個時刻。`platform/clock.Clock` 介面把系統時鐘抽象掉，`-at` 才有可能實作。
 
-### 10.3 排程機制：Tick + Guard
-
-需求 A8 要求「能自行調整通知的星期與時刻」。這排除了把排程寫死在 systemd 或 cron 的做法——那需要 sudo 編輯 unit 檔並 `daemon-reload`，且排程規則會跟 `config.yaml` 分居兩地，形成兩個真實來源。
-
-#### 方案比較
-
-| 方案 | 改排程的成本 | 單一設定來源 | 崩潰韌性 | 支援複雜規則 |
-|---|---|---|---|---|
-| systemd `OnCalendar` 寫死 | sudo + daemon-reload | ❌ 分兩地 | ✅ | ⚠️ 補班日需另加 unit |
-| crontab | `crontab -e` | ❌ 分兩地 | ✅ | ⚠️ 每種規則一行，易亂 |
-| 常駐 daemon 自行排程 | 改 config + 重啟 | ✅ | ❌ **當機即永久靜默** | ✅ |
-| **Tick + Guard（採用）** | **改 config，存檔即生效** | ✅ | ✅ 下一分鐘自動重試 | ✅ |
-
-#### 採用方案
-
-systemd timer **每分鐘**觸發一次，程式自行判斷該不該動作：
-
-```
-每分鐘喚醒
-  ├─ 讀 config.yaml
-  ├─ 今天在 skip_dates 內？        → 結束
-  ├─ 命中任一 schedule 的日期規則？ → 否則結束
-  ├─ 現在時刻 ∈ [at, at + tick_tolerance]？ → 否則結束
-  ├─ 讀狀態檔：今天這個 schedule 已成功送出？ → 是則結束
-  └─ 執行完整流程 → 成功後寫入狀態檔
-```
-
-**為什麼這個模式對？**
-
-- **排程規則住在 `config.yaml`** — 改完存檔下一分鐘生效，不用 sudo、不用 daemon-reload、不用重啟
-- **process 短命** — 每次執行 < 10 秒即退出，沒有長時間執行的記憶體或 goroutine 洩漏風險
-- **崩潰自癒** — 這一分鐘失敗（網路抖動、TDX 暫時性錯誤），下一分鐘自動重試；而常駐 daemon 一旦 panic 就永久靜默，那正是這種系統最可怕的失效模式
-- **規則表達力不受限** — 特定星期、特定日期（補班日）、排除日期（請假）、多個通知時段，全部只是 config 的資料
-- **v0.3 的「出門前二次查詢」只要多加一筆 schedule**，不動任何程式碼
-
-**成本可忽略**：Go 執行檔冷啟動 < 10 ms、RSS 約 5 MB，一天喚醒 1440 次。絕大多數 tick 在讀完 config 後就結束，**不會呼叫 TDX API**——每日實際 API 用量仍是 4 次左右。
-
-#### 狀態檔
-
-`/var/lib/tra-commute/state.json`（由 systemd `StateDirectory=` 建立）
-
-```json
-{
-  "last_success": { "平日通勤": "2026-08-18", "補班日": "2026-08-15" },
-  "last_attempt": { "平日通勤": "2026-08-18T07:50:03+08:00" },
-  "attempt_count_today": { "平日通勤": 1 }
-}
-```
-
-重試語意：同一天同一 schedule 若尚未成功，允許在 `[at, at + retry_window_minutes]`（預設 10 分）內於每個 tick 重試；超過視窗即放棄並發出降級通知。這避免了「TDX 掛一整天，Telegram 被灌 1440 則失敗訊息」。
-
-#### systemd 單元
-
-`/etc/systemd/system/tra-commute.timer`
-
-```ini
-[Unit]
-Description=TRA commute brief tick
-
-[Timer]
-OnCalendar=*:0/1                # 每分鐘
-AccuracySec=1s
-RandomizedDelaySec=0
-Persistent=false
-Unit=tra-commute.service
-
-[Install]
-WantedBy=timers.target
-```
-
-> 這裡不再需要 `OnCalendar` 的時區後綴，因此**沒有 systemd ≥ 250 的版本要求**——排程語意已完全移進程式內，由 `time.LoadLocation("Asia/Taipei")` 負責。這是 tick + guard 的附帶好處。
-> `Persistent=false`：主機當天沒開機時不補跑，因為隔天補送一則過期的通勤簡報毫無意義。
-
-`/etc/systemd/system/tra-commute.service`
-
-```ini
-[Unit]
-Description=TRA commute brief
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-User=tracommute
-Group=tracommute
-EnvironmentFile=/etc/tra-commute/env
-ExecStart=/usr/local/bin/tracommute -config /etc/tra-commute/config.yaml
-StateDirectory=tra-commute
-
-# 安全強化
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ProtectKernelTunables=true
-ProtectControlGroups=true
-RestrictAddressFamilies=AF_INET AF_INET6
-```
-
-> **日誌噪音**：每分鐘一次 oneshot 會在 journald 產生大量 `Started/Finished` 紀錄。未命中排程時程式應以 `slog` 的 `DEBUG` 等級靜默結束，並考慮為此 unit 設定 `LogLevelMax=notice`，避免 `journalctl` 被灌爆。
-
-### 10.4 部署流程
-
-```bash
-# 本機交叉編譯
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o tracommute ./cmd/tracommute
-
-# 上傳
-scp tracommute linode:/tmp/
-ssh linode 'sudo install -m 0755 /tmp/tracommute /usr/local/bin/'
-
-# 首次安裝
-ssh linode 'sudo bash /path/to/deploy/install.sh'
-
-# 驗證
-ssh linode 'sudo -u tracommute tracommute -dry-run -at 2026-08-19T07:50'
-ssh linode 'systemctl list-timers tra-commute'
-```
-
-### 10.5 可觀測性
-
-- **日誌**：結構化 JSON（`log/slog`）寫 stdout → journald。`journalctl -u tra-commute -n 50`
-- **原始資料存檔**：每次執行將三支 API 的原始回應寫入 `/var/lib/tra-commute/dumps/2026-08-18.json`，保留 30 天。
-  > 這是事後檢討「為什麼那天推薦錯了」的唯一依據。沒有它，你只能憑記憶猜測。成本極低，價值極高。
+`-dry-run` 模式下，指令迴圈（`getUpdates`）不啟動——`-dry-run` 的目的是驗證通知內容，不涉及即時設定的互動測試。
 
 ---
 
@@ -1085,9 +1265,10 @@ ssh linode 'systemctl list-timers tra-commute'
 | 2 | `tdx/client` + `models` | 能印出今日 OD 時刻表 |
 | 3 | 接上即時動態，合併資料 | 能印出含誤點的候選清單 |
 | 4 | **`planner` + 完整測試** | 情境 A–E 全綠 |
-| 5 | `notify/render` + `telegram` | 手機收到排版正確的訊息 |
-| 6 | systemd 部署 + 存檔/日誌 | `systemctl list-timers` 正確 |
-| 7 | 5 日驗收 + 校正 `ready_lead_minutes` / `last_mile_minutes` | 參數貼近實際 |
+| 5 | `adapter/render` + `adapter/telegram` | 手機收到排版正確的訊息 |
+| 6 | Docker 化 + 長駐行程（通知迴圈 + 指令迴圈）+ 存檔/日誌 | 容器內同時能發送定時通知、也能回應 `/help` |
+| 7 | `internal/command`（§10.2–10.7 指令狀態機） | `/setup` 能完整建立一條 Schedule 並開始收到通知 |
+| 8 | 5 日驗收 + 校正各條 Schedule 的 `T_ready` | 參數貼近實際 |
 
 > **階段 0 不可跳過。** §6.4 列出的五個待驗證項目，任一個猜錯都會讓後面全部重寫。
 
@@ -1097,13 +1278,13 @@ ssh linode 'systemctl list-timers tra-commute'
 
 | 版本 | 功能 | 說明 |
 |---|---|---|
-| v0.2 | **多路線／回程支援**（A12） | `route` + `constraints` 抽為 `journeys` 清單，`schedules` 各項可指定 `journey`；未指定則用預設，維持向後相容 |
+| v0.2 | **多路線／多排程即時設定**（A12，本次修訂已定案並納入規格） | 見 §10：Telegram 指令（`/setup` `/manage` ...）取代設定檔排程，一個使用者可維護多條獨立的 Schedule |
 | v0.2 | 停駛/事故偵測 | 接 `/News`，重大事故時提高警示層級 |
-| v0.2 | 政府行事曆整合 | 目前補班日以 `dates` 手動維護，可改為自動判定 |
-| v0.3 | 二次查詢 | 08:10 再推一次更新，抓取離發車更近的誤點（此時需實作 token 快取） |
-| v0.3 | 高鐵備案 | 全線大誤點時，計算高鐵桃園站方案 |
+| v0.2 | 政府行事曆整合 | 目前補班日以全域 `extra_dates` 手動維護，可改為自動判定 |
+| v0.3 | 二次查詢 | 通知後再推一次更新，抓取離發車更近的誤點（此時需實作 token 快取） |
+| v0.3 | 高鐵備案 | 全線大誤點時，計算高鐵方案 |
+| v0.3 | 每條 Schedule 各自的常搭班次／車種篩選 | 目前 `usual_train_nos` 與車種篩選仍是全域設定（見 §8 附註），多路線情境下宜下放到 Schedule 層級 |
 | v0.4 | 誤點統計 | 累積數月資料，回答「哪班車最常誤點」，據此調整常搭班次 |
-| v0.4 | Telegram 互動 | inline keyboard「重新查詢」按鈕 |
 
 ---
 
@@ -1139,10 +1320,10 @@ ssh linode 'systemctl list-timers tra-commute'
 
 ### A.3 需上線後校正（不阻擋，但影響推薦品質）
 
-- [ ] `ready_lead_minutes = 30` 是否符合實際（實測從起床到抵達桃園站需時）
-- [ ] `last_mile_options[0].minutes = 20` 是否符合實際（實測台北車站 → 打卡）
-- [ ] `risk_margin_minutes = 3` 是否過於保守（觀察誤點數字在出門途中的浮動幅度）
-- [ ] `severe_delay_threshold = 30` 是否合理（遲到超過幾分鐘該升級為最高警示）
+- [ ] 各條 Schedule 的 `T_ready` 是否符合實際（實測從起床到抵達起始站需時；已無 `ready_lead_minutes` 這個推算層，改為使用者透過 `/manage` 直接觀察並調整）
+- [ ] 各條 Schedule 的 `T_deadline` 是否符合實際（使用者自行換算，已無 `last_mile_minutes` 這個推算層，見 §1.3）
+- [ ] `risk_margin_minutes`（全域）是否過於保守（觀察誤點數字在出門途中的浮動幅度）
+- [ ] `severe_delay_threshold`（全域）是否合理（遲到超過幾分鐘該升級為最高警示）
 
 ---
 
@@ -1162,3 +1343,5 @@ ssh linode 'systemctl list-timers tra-commute'
 | 2026-08-18 | **狀態標記由行首移至行尾並改用英文短字**（§9.0 之三）：Telegram 即使在 `<pre>` 內也會吃掉行首空白，導致「可搭」列（標記為空白）縮排消失、整列左移。不變式：第一欄必須靠左對齊，任何行都不得以空白開頭 |
 | 2026-08-18 | **A13 依使用者更正修訂**：篩選依據改為「是否接受電子票證」而非「是否對號」——自強／莒光可持卡買站票故納入，僅排除普悠瑪／太魯閣；改用排除清單並以 `TrainTypeID`／名稱判別（`TrainTypeCode` 不可靠） |
 | 2026-08-18 | **A10 依使用者實測修正**：誤點證明可跨車次開立，「選了慢車開不出證明」的假設作廢；`own_lateness` 概念完全移除；§7.6 改為計算「該申請哪一班車的證明」，並編碼「僅限已到站列車」限制 |
+| 2026-08-18 | **v0.2 方向定案：即時 Telegram 設定介面取代設定檔排程，長駐行程取代 systemd timer**。新增 §1.3 界定系統邊界僅止於台鐵車站，**移除 A5（`last_mile_minutes`／打卡截止）**，`T_deadline` 改為「抵達目的地車站」；A4／A8／A12 依此修訂，新增 A14（即時設定與全域設定的分界）；重寫 §7.1／§7.4／§7.7 的公式與情境數字；重寫 §8 為全域校正參數（移除 `schedules`／`timing`／`clock_in_deadline`／`last_mile_minutes`／`max_early_leave_minutes`，改為 `extra_dates` 等）；重寫 §4.2／§4.3／§5 為 Docker + 長駐雙迴圈架構（通知迴圈 `time.Ticker`、指令迴圈 `getUpdates` 長輪詢）；新增 §10 完整定義 Schedule 模型、`/setup` `/manage` `/route` `/ready` `/deadline` `/schedule` `/earlyleave` `/status` `/help` 指令、`settings.json`／`state.json` 新結構、以及單一 goroutine + channel 序列化 `SettingsStore` 存取的併發規則（§10.7）；改寫 §12 實作順序、§13 後續版本規劃。**本次僅定案設計，`internal/command` 尚未實作**，程式碼現況仍是單一（非清單）的 `domain.Settings` |
+| 2026-08-18 | **指令介面收斂為僅 `/setup` 與 `/manage`**：移除 `/route` `/ready` `/deadline` `/schedule` `/earlyleave` 五個欄位層級指令（尚未上線，不保留相容）。改寫 §10.2–10.7：新增三個不變式（Schedule 只有「不存在」與「完整」兩態、編輯複用建立時的子流程、每個畫面按鈕收尾）；新增 §10.4 四段共用子流程（選站／選時刻／選星期／選分鐘數）供 `/setup` 與 `/manage` 共用；`/manage` 新增「➕ 新增一條規則」捷徑與逐欄編輯選單；新增 §10.7 操作體驗補強建議（建立後選單、錯誤訊息具體化、取消要明確告知未儲存、編輯後對照新舊值、`/help` 依是否已有 Schedule 給不同文案等七點）。原 §10.6／§10.7（儲存、併發存取）依序遞補為 §10.8／§10.9，目錄結構（§10.10）與 CLI 旗標（§10.9→§10.11）隨之調整，並同步修正全文交叉引用 |

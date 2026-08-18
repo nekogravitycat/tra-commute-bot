@@ -120,9 +120,6 @@ func TestRenderShowsHabitualTrains(t *testing.T) {
 	if !strings.Contains(msg.Text, "1136") {
 		t.Errorf("the missed habitual train is not shown:\n%s", msg.Text)
 	}
-	if !strings.Contains(msg.Text, "GONE 已過") {
-		t.Errorf("the legend should explain the missed label:\n%s", msg.Text)
-	}
 }
 
 // TestRenderScheduledOnly checks a train with no live record is labelled 表定
@@ -172,8 +169,10 @@ func TestRenderSevere(t *testing.T) {
 	if !strings.Contains(msg.Text, "<b>今日嚴重延誤</b>") {
 		t.Errorf("severe delays should escalate the title:\n%s", msg.Text)
 	}
-	if !strings.Contains(msg.Text, "建議直接聯繫主管") {
-		t.Errorf("severe delays should suggest contacting a manager:\n%s", msg.Text)
+	// Whether a delay warrants contacting a manager is the reader's call, not
+	// a suggestion the brief makes for them.
+	if strings.Contains(msg.Text, "建議直接聯繫主管") {
+		t.Errorf("the brief should not tell the reader what to do about the delay:\n%s", msg.Text)
 	}
 	// Suggesting is as far as it goes. Sending anything on the user's behalf
 	// is beyond what this program is authorised to do.
@@ -212,8 +211,9 @@ func TestRenderCertificateNotCovered(t *testing.T) {
 	}
 }
 
-// TestRenderCertificateUnavailable covers the one case that genuinely warrants
-// a warning: late, on a punctual railway, with nothing to certify.
+// TestRenderCertificateUnavailable covers the case where the user is late on
+// a punctual railway: there is nothing to certify, so the block does not
+// appear at all rather than explaining its own absence.
 func TestRenderCertificateUnavailable(t *testing.T) {
 	p := testParams()
 	p.LastMile = 45 * time.Minute
@@ -238,8 +238,8 @@ func TestRenderCertificateUnavailable(t *testing.T) {
 	})
 
 	msg := testRenderer().Render(b)
-	if !strings.Contains(msg.Text, "今日全線無顯著誤點，遲到可能無法取得證明") {
-		t.Errorf("expected the no-certificate warning:\n%s", msg.Text)
+	if strings.Contains(msg.Text, "誤點證明") {
+		t.Errorf("a brief with nothing to certify should omit the block entirely:\n%s", msg.Text)
 	}
 }
 
@@ -528,66 +528,29 @@ func isPictograph(r rune) bool {
 	return false
 }
 
-// TestLegendNamesOnlyUsedLabels checks the legend explains what is on screen
-// and nothing else.
-func TestLegendNamesOnlyUsedLabels(t *testing.T) {
-	// Everything punctual: 1136 is missed, one train is the recommendation,
-	// and no risky train exists here.
-	b := buildBrief(t, usualServices(), map[string]int{"1136": 0, "2008": 0, "1138": 0})
-	msg := testRenderer().Render(b)
-
-	for _, want := range []string{"REC 建議", "GONE 已過"} {
-		if !strings.Contains(msg.Text, want) {
-			t.Errorf("the legend should explain %q:\n%s", want, msg.Text)
-		}
-	}
-	if strings.Contains(msg.Text, "RISK 風險") {
-		t.Errorf("the legend names a label that is not in the table:\n%s", msg.Text)
-	}
-}
-
-// TestLatenessTableKey checks the minutes column is spelled out, since MIN on
-// its own could be read as a minimum rather than as minutes late.
-func TestLatenessTableKey(t *testing.T) {
+// TestLatenessTableMinutes checks a late alternative's minutes are folded
+// into its LATE label, since the table has no separate minutes column.
+func TestLatenessTableMinutes(t *testing.T) {
 	b := buildBrief(t, usualServices(), map[string]int{"1136": 8, "2008": 24, "1138": 2})
 	msg := testRenderer().Render(b)
 
-	if !strings.Contains(msg.Text, "MIN 遲到分鐘") {
-		t.Errorf("the MIN column should be explained:\n%s", msg.Text)
+	if !strings.Contains(msg.Text, "LATE") || !strings.Contains(msg.Text, "m") {
+		t.Errorf("a late alternative should show its minutes inline:\n%s", msg.Text)
 	}
-	// The normal template has no such column and must not claim one.
-	normal := testRenderer().Render(
-		buildBrief(t, usualServices(), map[string]int{"1136": 0, "2008": 0, "1138": 0}))
-	if strings.Contains(normal.Text, "MIN") {
-		t.Errorf("the normal template has no MIN column:\n%s", normal.Text)
+	if strings.Contains(msg.Text, "MIN") {
+		t.Errorf("the lateness table has no MIN column:\n%s", msg.Text)
 	}
 }
 
-// TestColumnKeyTranslatesHeadings checks the abbreviated headings are spelled
-// out underneath, so the English in the grid never has to be guessed at.
-func TestColumnKeyTranslatesHeadings(t *testing.T) {
-	b := buildBrief(t, usualServices(), map[string]int{"1136": 0, "2008": 0, "1138": 0})
-	msg := testRenderer().Render(b)
-
-	for _, want := range []string{"DLY 誤點", "DEP 發車", "ARR 抵北"} {
-		if !strings.Contains(msg.Text, want) {
-			t.Errorf("the column key should contain %q:\n%s", want, msg.Text)
+// TestNoLegendUnderTable checks no template prints a key translating the
+// table's abbreviations: the columns and status labels are left to speak
+// for themselves.
+func TestNoLegendUnderTable(t *testing.T) {
+	for name, b := range widthTestBriefs(t) {
+		msg := testRenderer().Render(b)
+		if strings.Contains(msg.Text, "DLY 誤點") {
+			t.Errorf("%s: should not print a column key:\n%s", name, msg.Text)
 		}
-	}
-	// With live data present there is no placeholder to explain.
-	if strings.Contains(msg.Text, "-- 無即時資料") {
-		t.Errorf("the placeholder note appears with no placeholder in the table:\n%s", msg.Text)
-	}
-}
-
-// TestColumnKeyExplainsPlaceholder checks the opposite case: when a train has
-// no live record, the reader is told what -- means rather than left to guess.
-func TestColumnKeyExplainsPlaceholder(t *testing.T) {
-	b := buildBrief(t, usualServices(), map[string]int{})
-	msg := testRenderer().Render(b)
-
-	if !strings.Contains(msg.Text, "-- 無即時資料") {
-		t.Errorf("the -- placeholder should be explained:\n%s", msg.Text)
 	}
 }
 

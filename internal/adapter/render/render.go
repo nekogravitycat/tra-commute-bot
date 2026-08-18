@@ -98,7 +98,6 @@ func (t Telegram) renderNormal(b domain.Brief) string {
 
 	fmt.Fprintf(&s, "\n%s\n", bold("其他選項"))
 	s.WriteString(pre(t.statusTable(b)))
-	s.WriteString(t.legendFor(b, false))
 	s.WriteString(t.footer(b))
 	return s.String()
 }
@@ -136,11 +135,10 @@ func (t Telegram) renderLate(b domain.Brief) string {
 	fmt.Fprintf(&s, "預計 %s 打卡 · %s\n",
 		clock(rec.ClockIn), bold(fmt.Sprintf("遲到 %d 分", rec.LatenessMinutes())))
 
-	s.WriteString("\n" + t.compensationBlock(b))
-
-	if b.Mode == domain.ModeSevere {
-		s.WriteString("\n遲到已超過可自行吸收的範圍，建議直接聯繫主管\n")
+	if comp := t.compensationBlock(b); comp != "" {
+		s.WriteString("\n" + comp)
 	}
+
 	if cert := t.certificateBlock(b); cert != "" {
 		s.WriteString("\n" + cert)
 	}
@@ -150,15 +148,17 @@ func (t Telegram) renderLate(b domain.Brief) string {
 
 	fmt.Fprintf(&s, "\n%s\n", bold("全部班次"))
 	s.WriteString(pre(t.latenessTable(b)))
-	s.WriteString(t.legendFor(b, true))
 	s.WriteString(t.footer(b))
 	return s.String()
 }
 
+// compensationBlock reports an early-leave option only when one exists. A
+// user who is already leaving as early as they can gains nothing from being
+// told so; the block simply does not appear.
 func (t Telegram) compensationBlock(b domain.Brief) string {
 	best := b.BestCompensation()
 	if best == nil {
-		return bold("提早出門") + "\n無法改善：時間窗內沒有更早抵達且趕得上的班次\n"
+		return ""
 	}
 
 	var s strings.Builder
@@ -184,10 +184,10 @@ func (t Telegram) certificateBlock(b domain.Brief) string {
 	}
 	c := b.Certificate
 
-	// The one case that genuinely warrants a warning: the user is late and
-	// the railway is running fine, so there is nothing to certify.
+	// The user is late and the railway is running fine: there is nothing to
+	// certify, so the block does not appear.
 	if !c.Found {
-		return bold("誤點證明") + "\n今日全線無顯著誤點，遲到可能無法取得證明\n"
+		return ""
 	}
 
 	var s strings.Builder
@@ -267,26 +267,17 @@ func (t Telegram) statusTable(b domain.Brief) string {
 	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", ""}
 	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignLeft}
 	for _, c := range t.tableRows(b) {
-		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), status(b, c))
+		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), lateStatus(b, c))
 	}
 	return tb.render()
 }
 
 func (t Telegram) latenessTable(b domain.Brief) string {
 	var tb table
-	// MIN rather than LATE, so the heading cannot be confused with the LATE
-	// value that appears in the status column beside it.
-	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", "MIN", ""}
-	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignRight, alignLeft}
+	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", ""}
+	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignLeft}
 	for _, c := range t.tableRows(b) {
-		// Minutes only. A unit in every cell would cost characters from a
-		// width budget that is the whole constraint here, and the key below
-		// already says what the number is.
-		min := fmt.Sprintf("%d", c.LatenessMinutes())
-		if c.Catchability == domain.Missed {
-			min = "-"
-		}
-		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), min, status(b, c))
+		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), lateStatus(b, c))
 	}
 	return tb.render()
 }
@@ -341,48 +332,15 @@ func status(b domain.Brief, c domain.Candidate) string {
 	}
 }
 
-// legendFor translates the table's abbreviations. It names only the status
-// labels actually present, since a fixed legend would spend a line explaining
-// words that are not on screen.
-func (t Telegram) legendFor(b domain.Brief, lateColumn bool) string {
-	rows := t.tableRows(b)
-
-	columns := "DLY 誤點　DEP 發車　ARR 抵" + esc(destSuffix(b.Route.DestinationName))
-	if lateColumn {
-		columns += "　MIN 遲到分鐘"
+// lateStatus is status, with the minutes late folded into the LATE label
+// itself. This is the lateness table's only record of the figure now that it
+// has no MIN column of its own.
+func lateStatus(b domain.Brief, c domain.Candidate) string {
+	s := status(b, c)
+	if s == statusLate {
+		return fmt.Sprintf("%s %dm", s, c.LatenessMinutes())
 	}
-	for _, c := range rows {
-		if c.DelaySource == domain.DelaySourceNone {
-			columns += "　" + noDelayData + " 無即時資料"
-			break
-		}
-	}
-
-	labels := []struct{ label, text string }{
-		{statusRecommended, "建議"},
-		{statusRisky, "風險"},
-		{statusLate, "遲到"},
-		{statusMissed, "已過"},
-		{statusCatchable, "可搭"},
-	}
-	used := map[string]bool{}
-	for _, c := range rows {
-		used[status(b, c)] = true
-	}
-
-	var parts []string
-	for _, l := range labels {
-		if used[l.label] {
-			parts = append(parts, l.label+" "+l.text)
-		}
-	}
-
-	var s strings.Builder
-	s.WriteString(columns + "\n")
-	if len(parts) > 0 {
-		s.WriteString(strings.Join(parts, "　") + "\n")
-	}
-	return s.String()
+	return s
 }
 
 // noDelayData marks a train the live board never mentioned. It reads as

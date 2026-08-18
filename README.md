@@ -138,7 +138,7 @@ schedule via its own two loops.
 
 ```bash
 cp configs/config.example.yaml configs/config.yaml   # tune it to your commute
-cp .example.env env                                   # fill in credentials
+cp .example.env .env                                   # fill in credentials
 docker compose up -d
 docker compose logs -f
 ```

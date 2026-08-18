@@ -29,9 +29,9 @@ func ParseTimeOfDay(s string) (TimeOfDay, error) {
 
 func (t TimeOfDay) String() string { return fmt.Sprintf("%02d:%02d", t.Hour, t.Minute) }
 
-// weekdayNames accepts the short and long English forms used by both
-// config.yaml's schedules[].weekdays and the /schedule Telegram command, so
-// the two surfaces stay consistent.
+// weekdayNames accepts the short and long English forms settings.json's
+// notify_weekdays is written in (see internal/adapter/settingsfile), so the
+// file stays human-readable.
 var weekdayNames = map[string]time.Weekday{
 	"sun": time.Sunday, "sunday": time.Sunday,
 	"mon": time.Monday, "monday": time.Monday,
@@ -203,14 +203,28 @@ type TickDecision struct {
 	Retry bool
 }
 
-// DecideTick applies the §10.3 guard. It is a pure function of the current
-// time, the configuration and the persisted state, which is the point: the
-// entire scheduling behaviour is testable without a clock, a timer or a file.
-func DecideTick(now time.Time, s Scheduling, st TickState) TickDecision {
+// DecideTicks applies the §10.3 guard to every Schedule independently. It is
+// a pure function of the current time, the configuration and the persisted
+// state, which is the point: the entire scheduling behaviour is testable
+// without a clock, a timer or a file.
+//
+// Every Schedule is evaluated on every call — nothing stops at the first
+// match. Two Schedules due in the same minute (a plausible setup: someone
+// running both an "上班通勤" and "下班通勤" rule) must both fire, not just
+// whichever happens to be first in the list.
+//
+// When at least one Schedule is due (TickRun or TickGiveUp), the returned
+// slice holds exactly those decisions — schedules that are simply not due yet
+// are not reported, there being nothing actionable to say about them. When
+// none are due, the slice holds exactly one TickNone decision whose Reason
+// joins every Schedule's skip reason, so a quiet morning can still be
+// explained from the log.
+func DecideTicks(now time.Time, s Scheduling, st TickState) []TickDecision {
 	if s.Skipped(now) {
-		return TickDecision{Reason: "date on skip list"}
+		return []TickDecision{{Reason: "date on skip list"}}
 	}
 
+	var due []TickDecision
 	// skipped records why each matching schedule declined to run, so a morning
 	// that produced no message can be explained from the log rather than
 	// guessed at. "No schedule due" and "already delivered" look identical
@@ -242,7 +256,8 @@ func DecideTick(now time.Time, s Scheduling, st TickState) TickDecision {
 			if !now.After(firedAt.Add(s.Tolerance)) {
 				d.Action = TickRun
 				d.Reason = "scheduled run"
-				return d
+				due = append(due, d)
+				continue
 			}
 			skipped = append(skipped, sch.Name+": missed the tolerance window")
 			continue
@@ -251,18 +266,23 @@ func DecideTick(now time.Time, s Scheduling, st TickState) TickDecision {
 		if !now.After(firedAt.Add(s.RetryWindow)) {
 			d.Action = TickRun
 			d.Reason = fmt.Sprintf("retry %d within window", attempt.Count+1)
-			return d
+			due = append(due, d)
+			continue
 		}
 		if !attempt.GaveUp {
 			d.Action = TickGiveUp
 			d.Reason = fmt.Sprintf("retry window expired after %d attempts", attempt.Count)
-			return d
+			due = append(due, d)
+			continue
 		}
 		skipped = append(skipped, sch.Name+": gave up earlier today")
 	}
 
-	if len(skipped) > 0 {
-		return TickDecision{Reason: strings.Join(skipped, "; ")}
+	if len(due) > 0 {
+		return due
 	}
-	return TickDecision{Reason: "no schedule matches today"}
+	if len(skipped) > 0 {
+		return []TickDecision{{Reason: strings.Join(skipped, "; ")}}
+	}
+	return []TickDecision{{Reason: "no schedule matches today"}}
 }

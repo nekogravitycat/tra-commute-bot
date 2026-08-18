@@ -1,12 +1,12 @@
-// Package settingsfile persists the live trip settings (schedule, ready
-// time, deadline, route, max early leave) as JSON on disk, so a value the
-// user sets over Telegram survives a restart and is visible to the next
-// tick without either side having to share memory.
+// Package settingsfile persists every Schedule (§10.1) the user has set up
+// over Telegram — name, notify weekdays/time, route, ready time, deadline,
+// max early leave — as JSON on disk, so settings.json survives a restart and
+// is visible to the next tick without either side having to share memory.
 //
 // It mirrors internal/adapter/statefile deliberately: same atomic
 // write-to-temp-then-rename save, same "a missing file is not an error"
-// load, because a fresh install has no settings yet and that must not block
-// /start from working.
+// load, because a fresh install has no schedules yet and that must not block
+// /setup from working.
 package settingsfile
 
 import (
@@ -21,88 +21,107 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 )
 
-// Store reads and writes the live settings at Path.
+// Store reads and writes settings.json at Path.
 type Store struct{ Path string }
 
 // New builds a store.
 func New(path string) *Store { return &Store{Path: path} }
 
-// wire is the on-disk shape. Weekdays and clock times are written as text
+// wireList is settings.json's on-disk shape (§10.8): a list under
+// "schedules", rather than v0.1's single object, so /setup can add a second
+// Schedule without the file's shape changing.
+type wireList struct {
+	Schedules []wireSchedule `json:"schedules"`
+}
+
+// wireSchedule is one Schedule. Weekdays and clock times are written as text
 // rather than domain.TimeOfDay's numeric fields, so the file can be read by
 // eye when a setting looks wrong.
-type wire struct {
-	ScheduleWeekdays []string `json:"schedule_weekdays"`
-	ScheduleAt       string   `json:"schedule_at"`
-	ReadyAt          string   `json:"ready_at"`
-	DeadlineAt       string   `json:"deadline_at"`
-	MaxEarlyLeaveMin int      `json:"max_early_leave_minutes"`
+type wireSchedule struct {
+	Name             string   `json:"name"`
+	NotifyWeekdays   []string `json:"notify_weekdays"`
+	NotifyAt         string   `json:"notify_at"`
 	OriginID         string   `json:"origin_id"`
 	OriginName       string   `json:"origin_name"`
 	DestinationID    string   `json:"destination_id"`
 	DestinationName  string   `json:"destination_name"`
+	ReadyAt          string   `json:"ready_at"`
+	DeadlineAt       string   `json:"deadline_at"`
+	MaxEarlyLeaveMin int      `json:"max_early_leave_minutes"`
 }
 
-// Load reads the settings. A missing file is not an error: it is the normal
-// state of a fresh install, before /route, /ready, /deadline, /schedule and
-// /earlyleave have been used for the first time.
-func (s *Store) Load() (domain.Settings, error) {
+// Load reads every Schedule. A missing file is not an error: it is the
+// normal state of a fresh install, before /setup has been used for the first
+// time.
+func (s *Store) Load() (domain.SettingsList, error) {
 	data, err := os.ReadFile(s.Path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return domain.Settings{}, nil
+		return domain.SettingsList{}, nil
 	}
 	if err != nil {
-		return domain.Settings{}, fmt.Errorf("read settings: %w", err)
+		return domain.SettingsList{}, fmt.Errorf("read settings: %w", err)
 	}
 
-	var w wire
+	var w wireList
 	if err := json.Unmarshal(data, &w); err != nil {
-		return domain.Settings{}, fmt.Errorf("decode settings: %w", err)
+		return domain.SettingsList{}, fmt.Errorf("decode settings: %w", err)
 	}
 
-	out := domain.Settings{
-		MaxEarlyLeave:   time.Duration(w.MaxEarlyLeaveMin) * time.Minute,
-		OriginID:        w.OriginID,
-		OriginName:      w.OriginName,
-		DestinationID:   w.DestinationID,
-		DestinationName: w.DestinationName,
+	list := domain.SettingsList{Schedules: make([]domain.Settings, 0, len(w.Schedules))}
+	for _, ws := range w.Schedules {
+		set, err := ws.toDomain()
+		if err != nil {
+			return domain.SettingsList{}, fmt.Errorf("decode settings: schedule %q: %w", ws.Name, err)
+		}
+		list.Schedules = append(list.Schedules, set)
 	}
-	for _, name := range w.ScheduleWeekdays {
+	return list, nil
+}
+
+func (ws wireSchedule) toDomain() (domain.Settings, error) {
+	out := domain.Settings{
+		Name:            ws.Name,
+		MaxEarlyLeave:   time.Duration(ws.MaxEarlyLeaveMin) * time.Minute,
+		OriginID:        ws.OriginID,
+		OriginName:      ws.OriginName,
+		DestinationID:   ws.DestinationID,
+		DestinationName: ws.DestinationName,
+	}
+	for _, name := range ws.NotifyWeekdays {
 		wd, err := domain.ParseWeekday(name)
 		if err != nil {
-			return domain.Settings{}, fmt.Errorf("decode settings: %w", err)
+			return domain.Settings{}, err
 		}
 		out.ScheduleWeekdays = append(out.ScheduleWeekdays, wd)
 	}
-	if w.ScheduleAt != "" {
-		t, err := domain.ParseTimeOfDay(w.ScheduleAt)
+	if ws.NotifyAt != "" {
+		t, err := domain.ParseTimeOfDay(ws.NotifyAt)
 		if err != nil {
-			return domain.Settings{}, fmt.Errorf("decode settings: schedule_at: %w", err)
+			return domain.Settings{}, fmt.Errorf("notify_at: %w", err)
 		}
 		out.ScheduleAt = t
 	}
-	if w.ReadyAt != "" {
-		t, err := domain.ParseTimeOfDay(w.ReadyAt)
+	if ws.ReadyAt != "" {
+		t, err := domain.ParseTimeOfDay(ws.ReadyAt)
 		if err != nil {
-			return domain.Settings{}, fmt.Errorf("decode settings: ready_at: %w", err)
+			return domain.Settings{}, fmt.Errorf("ready_at: %w", err)
 		}
 		out.ReadyAt = t
 	}
-	if w.DeadlineAt != "" {
-		t, err := domain.ParseTimeOfDay(w.DeadlineAt)
+	if ws.DeadlineAt != "" {
+		t, err := domain.ParseTimeOfDay(ws.DeadlineAt)
 		if err != nil {
-			return domain.Settings{}, fmt.Errorf("decode settings: deadline_at: %w", err)
+			return domain.Settings{}, fmt.Errorf("deadline_at: %w", err)
 		}
 		out.DeadlineAt = t
 	}
 	return out, nil
 }
 
-// Save writes the settings atomically: a torn file after a crash would make
-// every tick for the rest of the day read garbage, and Telegram commands can
-// arrive at any moment, not just at a quiet time of day.
-func (s *Store) Save(set domain.Settings) error {
-	w := wire{
-		ScheduleAt:       set.ScheduleAt.String(),
+func fromDomain(set domain.Settings) wireSchedule {
+	w := wireSchedule{
+		Name:             set.Name,
+		NotifyAt:         set.ScheduleAt.String(),
 		ReadyAt:          set.ReadyAt.String(),
 		DeadlineAt:       set.DeadlineAt.String(),
 		MaxEarlyLeaveMin: int(set.MaxEarlyLeave / time.Minute),
@@ -114,7 +133,7 @@ func (s *Store) Save(set domain.Settings) error {
 	// An unset TimeOfDay must round-trip as absent, not as "00:00" — that
 	// would otherwise be misread as a real midnight setting on the next load.
 	if set.ScheduleAt == (domain.TimeOfDay{}) {
-		w.ScheduleAt = ""
+		w.NotifyAt = ""
 	}
 	if set.ReadyAt == (domain.TimeOfDay{}) {
 		w.ReadyAt = ""
@@ -123,7 +142,18 @@ func (s *Store) Save(set domain.Settings) error {
 		w.DeadlineAt = ""
 	}
 	for _, wd := range set.ScheduleWeekdays {
-		w.ScheduleWeekdays = append(w.ScheduleWeekdays, domain.WeekdayShort(wd))
+		w.NotifyWeekdays = append(w.NotifyWeekdays, domain.WeekdayShort(wd))
+	}
+	return w
+}
+
+// Save writes every Schedule atomically: a torn file after a crash would
+// make every tick for the rest of the day read garbage, and Telegram
+// commands can arrive at any moment, not just at a quiet time of day.
+func (s *Store) Save(list domain.SettingsList) error {
+	w := wireList{Schedules: make([]wireSchedule, 0, len(list.Schedules))}
+	for _, set := range list.Schedules {
+		w.Schedules = append(w.Schedules, fromDomain(set))
 	}
 
 	data, err := json.MarshalIndent(w, "", "  ")

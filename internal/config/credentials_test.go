@@ -129,8 +129,8 @@ func TestDotEnvDoesNotOverride(t *testing.T) {
 	}
 }
 
-// TestDotEnvMissingIsFine checks a missing file is not an error: on the server
-// systemd supplies the environment and no such file exists.
+// TestDotEnvMissingIsFine checks a missing file is not an error: in the
+// container Docker supplies the environment and no such file exists.
 func TestDotEnvMissingIsFine(t *testing.T) {
 	if err := LoadDotEnv(filepath.Join(t.TempDir(), "absent")); err != nil {
 		t.Errorf("a missing env file should be ignored, got %v", err)
@@ -138,7 +138,7 @@ func TestDotEnvMissingIsFine(t *testing.T) {
 }
 
 // TestDotEnvEmptyPathDisabled checks an empty path switches the file off. The
-// systemd unit passes one so the server uses only the environment it was given.
+// container's entrypoint passes one so it uses only the environment it was given.
 func TestDotEnvEmptyPathDisabled(t *testing.T) {
 	if err := LoadDotEnv(""); err != nil {
 		t.Errorf("an empty path should disable the env file, got %v", err)

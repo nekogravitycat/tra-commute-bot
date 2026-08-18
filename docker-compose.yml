@@ -1,0 +1,19 @@
+# docker compose up -d
+#
+# Config lives in ./configs/config.yaml (copy configs/config.example.yaml and
+# tune it), credentials in ./env — see .example.env. Both are bind-mounted
+# read-only; state, settings.json and the archive live in the named volume so
+# a container recreate never loses a live setting or the day's tick guard.
+services:
+  tracommute:
+    build: .
+    image: tra-commute-bot:latest
+    restart: unless-stopped
+    env_file:
+      - env
+    volumes:
+      - ./configs/config.yaml:/etc/tra-commute/config.yaml:ro
+      - tra-commute-data:/var/lib/tra-commute
+
+volumes:
+  tra-commute-data:

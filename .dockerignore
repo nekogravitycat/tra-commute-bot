@@ -1,0 +1,9 @@
+.git
+.github
+.local
+.claude
+*.md
+tracommute
+gen-stations
+.env
+configs/config.local.yaml

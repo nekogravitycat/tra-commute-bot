@@ -1180,7 +1180,7 @@ tra-commute-bot/
 └── README.md
 ```
 
-> `internal/command` 為 v0.2 新增，尚未實作（本次規格修訂僅定案設計方向）；其餘目錄對應既有程式碼的 clean architecture 分層（domain 不依賴外部、usecase 宣告介面、adapter 實作介面、cmd 組裝）。
+> `internal/command` 為 v0.2 新增，已實作完成（見下方變更紀錄）；其餘目錄對應既有程式碼的 clean architecture 分層（domain 不依賴外部、usecase 宣告介面、adapter 實作介面、cmd 組裝）。
 
 ### 10.11 CLI 旗標
 
@@ -1344,4 +1344,5 @@ tracommute [flags]
 | 2026-08-18 | **A13 依使用者更正修訂**：篩選依據改為「是否接受電子票證」而非「是否對號」——自強／莒光可持卡買站票故納入，僅排除普悠瑪／太魯閣；改用排除清單並以 `TrainTypeID`／名稱判別（`TrainTypeCode` 不可靠） |
 | 2026-08-18 | **A10 依使用者實測修正**：誤點證明可跨車次開立，「選了慢車開不出證明」的假設作廢；`own_lateness` 概念完全移除；§7.6 改為計算「該申請哪一班車的證明」，並編碼「僅限已到站列車」限制 |
 | 2026-08-18 | **v0.2 方向定案：即時 Telegram 設定介面取代設定檔排程，長駐行程取代 systemd timer**。新增 §1.3 界定系統邊界僅止於台鐵車站，**移除 A5（`last_mile_minutes`／打卡截止）**，`T_deadline` 改為「抵達目的地車站」；A4／A8／A12 依此修訂，新增 A14（即時設定與全域設定的分界）；重寫 §7.1／§7.4／§7.7 的公式與情境數字；重寫 §8 為全域校正參數（移除 `schedules`／`timing`／`clock_in_deadline`／`last_mile_minutes`／`max_early_leave_minutes`，改為 `extra_dates` 等）；重寫 §4.2／§4.3／§5 為 Docker + 長駐雙迴圈架構（通知迴圈 `time.Ticker`、指令迴圈 `getUpdates` 長輪詢）；新增 §10 完整定義 Schedule 模型、`/setup` `/manage` `/route` `/ready` `/deadline` `/schedule` `/earlyleave` `/status` `/help` 指令、`settings.json`／`state.json` 新結構、以及單一 goroutine + channel 序列化 `SettingsStore` 存取的併發規則（§10.7）；改寫 §12 實作順序、§13 後續版本規劃。**本次僅定案設計，`internal/command` 尚未實作**，程式碼現況仍是單一（非清單）的 `domain.Settings` |
+| 2026-08-18 | **v0.2 實作完成**：`domain.Settings` 改為 `SettingsList`（§10.1）；`DecideTick` 改為 `DecideTicks`，每條 Schedule 各自獨立判斷，同一分鐘可有多條同時命中；新增 `usecase.SettingsActor`（單一 goroutine + channel 序列化，§10.9）；`cmd/tracommute` 改為長駐雙迴圈（`time.Ticker` 通知迴圈 + `getUpdates` 長輪詢指令迴圈），`-at`／`-dry-run`／`-force` 保留為單次模擬執行的除錯路徑；新增 `internal/command`（`router.go`／`setup.go`／`manage.go`／`flows.go`／`keyboard.go`），完整實作 `/setup` `/manage` `/status` `/help` `/cancel` 與 §10.4 四段共用子流程；新增 `internal/adapter/telegram` 的 `getUpdates`／`sendMessage`（含 inline keyboard）／`editMessageReplyMarkup`／`answerCallbackQuery`；新增 `cmd/gen-stations` 以 TDX `/Station` 一次性產生 `internal/domain/stations_data.go`（245 站），供 `/setup` 選站子流程比對，正式執行不再呼叫 `/Station`；部署改為 Docker（`Dockerfile`／`docker-compose.yml`），移除 v0.1 的 systemd timer 部署檔案；CI 的 release job 改為建置並推送 Docker image 至 GHCR |
 | 2026-08-18 | **指令介面收斂為僅 `/setup` 與 `/manage`**：移除 `/route` `/ready` `/deadline` `/schedule` `/earlyleave` 五個欄位層級指令（尚未上線，不保留相容）。改寫 §10.2–10.7：新增三個不變式（Schedule 只有「不存在」與「完整」兩態、編輯複用建立時的子流程、每個畫面按鈕收尾）；新增 §10.4 四段共用子流程（選站／選時刻／選星期／選分鐘數）供 `/setup` 與 `/manage` 共用；`/manage` 新增「➕ 新增一條規則」捷徑與逐欄編輯選單；新增 §10.7 操作體驗補強建議（建立後選單、錯誤訊息具體化、取消要明確告知未儲存、編輯後對照新舊值、`/help` 依是否已有 Schedule 給不同文案等七點）。原 §10.6／§10.7（儲存、併發存取）依序遞補為 §10.8／§10.9，目錄結構（§10.10）與 CLI 旗標（§10.9→§10.11）隨之調整，並同步修正全文交叉引用 |

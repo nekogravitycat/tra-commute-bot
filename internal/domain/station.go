@@ -3,15 +3,16 @@ package domain
 import "strings"
 
 // Station is one TRA station, as needed to resolve a name the user typed
-// into a station ID for /route.
+// into a station ID during /setup or /manage's route question (§10.4-A).
 type Station struct {
 	ID     string
 	NameZh string
 	NameEn string
 }
 
-// MatchStations ranks stations against a query the user typed into /route.
-// It is deliberately simple substring matching rather than anything
+// MatchStations ranks stations against a query the user typed into /setup or
+// /manage's station question. It is deliberately simple substring matching
+// rather than anything
 // distance-based: TRA station names are short and mostly distinct, and a
 // user picking from an inline keyboard can tolerate a slightly noisy
 // candidate list far better than a fuzzy matcher can tolerate silently

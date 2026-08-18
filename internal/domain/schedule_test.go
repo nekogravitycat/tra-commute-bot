@@ -39,7 +39,7 @@ func on(date, hhmm string) time.Time {
 
 func TestTickWeekdayHit(t *testing.T) {
 	// 2026-08-19 is a Wednesday.
-	d := DecideTick(on("2026-08-19", "07:50"), testScheduling(), TickState{})
+	d := DecideTicks(on("2026-08-19", "07:50"), testScheduling(), TickState{})[0]
 
 	if d.Action != TickRun {
 		t.Fatalf("action = %v (%s), want run", d.Action, d.Reason)
@@ -56,7 +56,7 @@ func TestTickWeekdayHit(t *testing.T) {
 
 func TestTickWeekendMiss(t *testing.T) {
 	// 2026-08-22 is a Saturday, and no weekday rule covers it.
-	if d := DecideTick(on("2026-08-22", "07:50"), testScheduling(), TickState{}); d.Action != TickNone {
+	if d := DecideTicks(on("2026-08-22", "07:50"), testScheduling(), TickState{})[0]; d.Action != TickNone {
 		t.Errorf("action = %v, want none on a Saturday", d.Action)
 	}
 }
@@ -66,7 +66,7 @@ func TestTickWeekendMiss(t *testing.T) {
 // calendar feed.
 func TestTickMakeUpWorkday(t *testing.T) {
 	// 2026-09-26 is a Saturday and is on the make-up list.
-	d := DecideTick(on("2026-09-26", "07:50"), testScheduling(), TickState{})
+	d := DecideTicks(on("2026-09-26", "07:50"), testScheduling(), TickState{})[0]
 
 	if d.Action != TickRun {
 		t.Fatalf("action = %v (%s), want run on the make-up workday", d.Action, d.Reason)
@@ -80,7 +80,7 @@ func TestTickSkipDate(t *testing.T) {
 	rules := testScheduling()
 	rules.SkipDates = []string{"2026-08-19"}
 
-	d := DecideTick(on("2026-08-19", "07:50"), rules, TickState{})
+	d := DecideTicks(on("2026-08-19", "07:50"), rules, TickState{})[0]
 	if d.Action != TickNone {
 		t.Errorf("action = %v, want none on a skipped date", d.Action)
 	}
@@ -92,12 +92,12 @@ func TestTickIdempotent(t *testing.T) {
 	state := TickState{LastSuccess: map[string]string{"平日通勤": "2026-08-19"}}
 
 	for _, hhmm := range []string{"07:51", "07:52", "08:30", "23:59"} {
-		if d := DecideTick(on("2026-08-19", hhmm), testScheduling(), state); d.Action != TickNone {
+		if d := DecideTicks(on("2026-08-19", hhmm), testScheduling(), state)[0]; d.Action != TickNone {
 			t.Errorf("at %s: action = %v, want none after a successful delivery", hhmm, d.Action)
 		}
 	}
 	// Tomorrow must still fire: yesterday's success is not today's.
-	if d := DecideTick(on("2026-08-20", "07:50"), testScheduling(), state); d.Action != TickRun {
+	if d := DecideTicks(on("2026-08-20", "07:50"), testScheduling(), state)[0]; d.Action != TickRun {
 		t.Errorf("next day: action = %v, want run", d.Action)
 	}
 }
@@ -115,7 +115,7 @@ func TestTickTolerance(t *testing.T) {
 		{"07:53", TickNone}, // past it, with no attempt on record
 	}
 	for _, tc := range tests {
-		got := DecideTick(on("2026-08-19", tc.hhmm), testScheduling(), TickState{})
+		got := DecideTicks(on("2026-08-19", tc.hhmm), testScheduling(), TickState{})[0]
 		if got.Action != tc.want {
 			t.Errorf("at %s: action = %v, want %v (%s)", tc.hhmm, got.Action, tc.want, got.Reason)
 		}
@@ -132,7 +132,7 @@ func TestTickRetryWindow(t *testing.T) {
 
 	// Inside the window, keep retrying.
 	for _, hhmm := range []string{"07:51", "07:55", "08:00"} {
-		d := DecideTick(on("2026-08-19", hhmm), testScheduling(), failed)
+		d := DecideTicks(on("2026-08-19", hhmm), testScheduling(), failed)[0]
 		if d.Action != TickRun {
 			t.Errorf("at %s: action = %v, want a retry (%s)", hhmm, d.Action, d.Reason)
 		}
@@ -142,7 +142,7 @@ func TestTickRetryWindow(t *testing.T) {
 	}
 
 	// Past it, give up exactly once, so the day does not end in silence.
-	d := DecideTick(on("2026-08-19", "08:01"), testScheduling(), failed)
+	d := DecideTicks(on("2026-08-19", "08:01"), testScheduling(), failed)[0]
 	if d.Action != TickGiveUp {
 		t.Fatalf("action = %v, want give up past the retry window (%s)", d.Action, d.Reason)
 	}
@@ -151,7 +151,7 @@ func TestTickRetryWindow(t *testing.T) {
 	failed.Attempts["平日通勤"] = Attempt{
 		Date: "2026-08-19", Count: 1, LastAt: on("2026-08-19", "07:50"), GaveUp: true,
 	}
-	if d := DecideTick(on("2026-08-19", "08:02"), testScheduling(), failed); d.Action != TickNone {
+	if d := DecideTicks(on("2026-08-19", "08:02"), testScheduling(), failed)[0]; d.Action != TickNone {
 		t.Errorf("action = %v, want none after the give-up notice was sent", d.Action)
 	}
 }
@@ -162,12 +162,43 @@ func TestTickStaleAttemptIgnored(t *testing.T) {
 		"平日通勤": {Date: "2026-08-18", Count: 9, LastAt: on("2026-08-18", "07:50"), GaveUp: true},
 	}}
 
-	d := DecideTick(on("2026-08-19", "07:50"), testScheduling(), stale)
+	d := DecideTicks(on("2026-08-19", "07:50"), testScheduling(), stale)[0]
 	if d.Action != TickRun {
 		t.Fatalf("action = %v, want run: yesterday's failures must not gate today", d.Action)
 	}
 	if d.Retry {
 		t.Error("today's first attempt should not be marked as a retry")
+	}
+}
+
+// TestTickMultipleSchedulesDueTogether checks that two independent Schedules
+// due in the same minute both fire — a plausible setup (a "上班通勤" and a
+// "下班通勤" rule can share a notify time by coincidence) that an early-return
+// guard would silently under-serve, running only the first and leaving the
+// second looking like it "did not fire" with no reason ever logged.
+func TestTickMultipleSchedulesDueTogether(t *testing.T) {
+	rules := Scheduling{
+		Schedules: []Schedule{
+			{Name: "上班通勤", Weekdays: []time.Weekday{time.Wednesday}, At: TimeOfDay{Hour: 7, Minute: 50}},
+			{Name: "下班通勤", Weekdays: []time.Weekday{time.Wednesday}, At: TimeOfDay{Hour: 7, Minute: 50}},
+		},
+		Tolerance:   2 * time.Minute,
+		RetryWindow: 10 * time.Minute,
+	}
+
+	ds := DecideTicks(on("2026-08-19", "07:50"), rules, TickState{})
+	if len(ds) != 2 {
+		t.Fatalf("got %d decisions, want 2 (both schedules due)", len(ds))
+	}
+	names := map[string]bool{}
+	for _, d := range ds {
+		if d.Action != TickRun {
+			t.Errorf("schedule %s: action = %v, want run", d.Schedule.Name, d.Action)
+		}
+		names[d.Schedule.Name] = true
+	}
+	if !names["上班通勤"] || !names["下班通勤"] {
+		t.Errorf("decisions = %v, want both 上班通勤 and 下班通勤", ds)
 	}
 }
 
@@ -250,7 +281,7 @@ func TestTickReasonsAreSpecific(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			d := DecideTick(tc.when, testScheduling(), tc.state)
+			d := DecideTicks(tc.when, testScheduling(), tc.state)[0]
 			if d.Action != TickNone {
 				t.Fatalf("action = %v, want none", d.Action)
 			}

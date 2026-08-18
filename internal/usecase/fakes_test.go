@@ -105,27 +105,28 @@ func (f *fakeState) Save(s domain.TickState) error {
 	return nil
 }
 
-// fakeSettings backs SettingsStore. It defaults to testTrip() when no
-// settings have been explicitly loaded, so tests that do not care about the
-// live-settings plumbing keep working against a complete trip.
+// fakeSettings backs SettingsStore. It defaults to a single-schedule list
+// built from testTrip() when no settings have been explicitly loaded, so
+// tests that do not care about the live-settings plumbing keep working
+// against a complete trip.
 type fakeSettings struct {
-	settings *domain.Settings // nil until Save or an explicit preset is given
+	settings *domain.SettingsList // nil until Save or an explicit preset is given
 	loadErr  error
 	saveErr  error
 	saves    int
 }
 
-func (f *fakeSettings) Load() (domain.Settings, error) {
+func (f *fakeSettings) Load() (domain.SettingsList, error) {
 	if f.loadErr != nil {
-		return domain.Settings{}, f.loadErr
+		return domain.SettingsList{}, f.loadErr
 	}
 	if f.settings == nil {
-		return testTrip(), nil
+		return domain.SettingsList{Schedules: []domain.Settings{testTrip()}}, nil
 	}
 	return *f.settings, nil
 }
 
-func (f *fakeSettings) Save(s domain.Settings) error {
+func (f *fakeSettings) Save(s domain.SettingsList) error {
 	f.saves++
 	if f.saveErr != nil {
 		return f.saveErr
@@ -172,6 +173,7 @@ func testSettings() BriefSettings {
 // used to live on BriefSettings.
 func testTrip() domain.Settings {
 	return domain.Settings{
+		Name:             "commute",
 		ScheduleWeekdays: []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday},
 		ScheduleAt:       domain.TimeOfDay{Hour: 7, Minute: 50},
 		ReadyAt:          domain.TimeOfDay{Hour: 8, Minute: 20},

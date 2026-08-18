@@ -1,21 +1,23 @@
 # tra-commute-bot configuration
 #
-# Deployed at /etc/tra-commute/config.yaml, mode 0644. It holds no credentials,
-# so it is safe to keep readable and in version control.
+# Mounted into the container at /etc/tra-commute/config.yaml (§8). It holds no
+# credentials, so it is safe to keep readable and in version control.
 #
-# Edits take effect on the next tick: no sudo, no daemon-reload, no restart.
-# The every-minute timer re-reads this file each time it wakes.
+# This file holds only the calibration knobs shared by every Schedule and
+# rarely changed by hand. Each Schedule's own parameters — name, notify
+# weekdays/time, route, ready time, deadline, max early leave — are not here:
+# they are set live over Telegram (/setup, /manage) and persisted in
+# storage.settings_path below, as a list. A fresh install has none of them
+# set, and the bot will say so and point at /setup.
 #
-# This file holds only the calibration knobs an admin edits by hand. The trip
-# parameters that change often — schedule, ready time, deadline, route, max
-# early leave — are not here: they are set live over Telegram (/route,
-# /ready, /deadline, /schedule, /earlyleave) and persisted in storage.settings_path
-# below. A fresh install has none of them set, and the bot will say so.
+# The process reads this file once at startup — restart the container after
+# editing it (docker compose up -d, or docker restart).
 
 # ── Schedule guard ────────────────────────────────────────────────
-# The systemd timer fires every minute; the program decides whether this
-# particular minute is the scheduled one. The schedule's own weekdays and
-# fire time come from /schedule, not from here.
+# The notify loop's time.Ticker fires every minute; the program decides
+# whether any Schedule's own notify time (set via /setup or /manage) is due
+# this particular minute. skip_dates and extra_dates are a calendar shared by
+# every Schedule.
 extra_dates: []             # one-off make-up workdays (補班日), yyyy-MM-dd
 skip_dates: []              # leave, public holidays, business trips
 
@@ -23,9 +25,9 @@ tick_tolerance_minutes: 2   # a first attempt is accepted within [at, at+2]
 retry_window_minutes: 10    # retry every minute until [at, at+10], then send
                             # the degraded notice and stop for the day
 
-# v0.1 plans a single leg. v0.2 turns this into a list of journeys, with each
-# schedule able to name one; entries without a journey keep using the default,
-# so this structure will not become a breaking change.
+# Shared by every Schedule (§8's note): if two Schedules run opposite
+# directions, usual_train_nos and the train-type filter below apply to both,
+# which is a known simplification — see spec.md §8 and v0.3 in §13.
 route:
   usual_train_nos: ["2008", "1136", "1138"]   # marked as habitual; does not
                                               # restrict the candidate set

@@ -36,9 +36,10 @@ func firstEnv(names ...string) string {
 
 // LoadCredentials reads the credentials from the environment.
 //
-// Credentials never come from the YAML file. In production systemd supplies
-// them from a 0600 EnvironmentFile; keeping them out of the config means the
-// config can stay readable, diffable and in version control.
+// Credentials never come from the YAML file. In production Docker supplies
+// them via an env file (docker-compose.yml's env_file, or `docker run
+// --env-file`); keeping them out of the config means the config can stay
+// readable, diffable and in version control.
 func LoadCredentials() (Credentials, error) {
 	c := Credentials{
 		TDXClientID:     os.Getenv(EnvTDXClientID),
@@ -69,13 +70,13 @@ func (c Credentials) TelegramConfigured() bool {
 // LoadDotEnv reads a KEY=VALUE file into the environment without overwriting
 // variables that are already set.
 //
-// This exists for local development only. On the server systemd's
-// EnvironmentFile does the same job, and a missing file here is not an error
+// This exists for local development only. In the container Docker's own
+// env file does the same job, and a missing file here is not an error
 // precisely so that the same binary works in both places.
 func LoadDotEnv(path string) error {
-	// An empty path disables the file entirely, which is how the systemd unit
-	// makes sure the server never picks up a stray file from the working
-	// directory instead of the environment it was given.
+	// An empty path disables the file entirely, which is how the container's
+	// entrypoint (CMD's -env-file "") makes sure it never picks up a stray
+	// .env from the working directory instead of the environment it was given.
 	if path == "" {
 		return nil
 	}

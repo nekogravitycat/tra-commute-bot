@@ -21,10 +21,11 @@ import (
 // File mirrors the YAML document. Field names match the specification's
 // config.yaml exactly, so the file and this struct can be read side by side.
 //
-// This holds only the calibration knobs an admin edits by hand: the six trip
-// parameters that change often (schedule, ready time, deadline, route, max
-// early leave) live in the settings file instead, set live over Telegram —
-// see internal/domain.Settings and internal/adapter/settingsfile.
+// This holds only the calibration knobs an admin edits by hand and shares
+// across every Schedule. Each Schedule's own parameters (name, notify
+// weekdays/time, route, ready time, deadline, max early leave) live in the
+// settings file instead, as a list, set live over Telegram via /setup and
+// /manage — see internal/domain.SettingsList and internal/adapter/settingsfile.
 type File struct {
 	// ExtraDates are one-off make-up workdays (補班日) that fire on the same
 	// schedule time as the regular weekday schedule. Rare enough that a

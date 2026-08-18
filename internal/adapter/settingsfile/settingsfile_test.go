@@ -10,11 +10,9 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 )
 
-func TestRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "settings.json")
-	s := New(path)
-
-	want := domain.Settings{
+func fullSchedule(name string) domain.Settings {
+	return domain.Settings{
+		Name:             name,
 		ScheduleWeekdays: []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday},
 		ScheduleAt:       domain.TimeOfDay{Hour: 7, Minute: 50},
 		ReadyAt:          domain.TimeOfDay{Hour: 8, Minute: 20},
@@ -25,6 +23,16 @@ func TestRoundTrip(t *testing.T) {
 		DestinationID:    "1000",
 		DestinationName:  "臺北",
 	}
+}
+
+func TestRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s := New(path)
+
+	want := domain.SettingsList{Schedules: []domain.Settings{
+		fullSchedule("上班通勤"),
+		fullSchedule("下班通勤"),
+	}}
 	if err := s.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -36,13 +44,10 @@ func TestRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip = %+v, want %+v", got, want)
 	}
-	if complete, missing := got.Complete(); !complete {
-		t.Errorf("settings incomplete after round trip, missing %v", missing)
-	}
 }
 
-// TestLoadMissingFile checks a fresh install starts cleanly, with an
-// incomplete Settings{} rather than an error.
+// TestLoadMissingFile checks a fresh install starts cleanly, with an empty
+// list rather than an error — the normal state before /setup has ever run.
 func TestLoadMissingFile(t *testing.T) {
 	s := New(filepath.Join(t.TempDir(), "absent.json"))
 
@@ -50,10 +55,8 @@ func TestLoadMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a missing settings file should not be an error: %v", err)
 	}
-	if complete, missing := got.Complete(); complete {
-		t.Errorf("fresh settings should be incomplete, got complete")
-	} else if len(missing) == 0 {
-		t.Error("expected missing fields to be named")
+	if len(got.Schedules) != 0 {
+		t.Errorf("fresh settings should hold no schedules, got %+v", got)
 	}
 }
 
@@ -68,24 +71,27 @@ func TestLoadCorruptFile(t *testing.T) {
 }
 
 // TestUnsetTimesDoNotBecomeMidnight checks the zero TimeOfDay round-trips as
-// absent rather than as a literal 00:00 — otherwise a half-finished setup
-// would look complete.
+// absent rather than as a literal 00:00.
 func TestUnsetTimesDoNotBecomeMidnight(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	s := New(path)
 
-	if err := s.Save(domain.Settings{OriginID: "1080", DestinationID: "1000"}); err != nil {
+	list := domain.SettingsList{Schedules: []domain.Settings{
+		{Name: "上班通勤", OriginID: "1080", DestinationID: "1000"},
+	}}
+	if err := s.Save(list); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got, err := s.Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.ReadyAt != (domain.TimeOfDay{}) || got.DeadlineAt != (domain.TimeOfDay{}) {
-		t.Errorf("ready/deadline = %+v/%+v, want both unset", got.ReadyAt, got.DeadlineAt)
+	set, ok := got.Find("上班通勤")
+	if !ok {
+		t.Fatalf("expected to find 上班通勤 in %+v", got)
 	}
-	if complete, _ := got.Complete(); complete {
-		t.Error("settings with no ready/deadline/schedule should not be complete")
+	if set.ReadyAt != (domain.TimeOfDay{}) || set.DeadlineAt != (domain.TimeOfDay{}) {
+		t.Errorf("ready/deadline = %+v/%+v, want both unset", set.ReadyAt, set.DeadlineAt)
 	}
 }
 
@@ -96,7 +102,8 @@ func TestSaveIsAtomic(t *testing.T) {
 	s := New(path)
 
 	for i := 0; i < 3; i++ {
-		if err := s.Save(domain.Settings{OriginID: "1080"}); err != nil {
+		list := domain.SettingsList{Schedules: []domain.Settings{{Name: "上班通勤", OriginID: "1080"}}}
+		if err := s.Save(list); err != nil {
 			t.Fatalf("Save: %v", err)
 		}
 	}
@@ -118,10 +125,29 @@ func TestSaveCreatesDirectory(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "deeper", "settings.json")
 	s := New(path)
 
-	if err := s.Save(domain.Settings{OriginID: "1080"}); err != nil {
+	list := domain.SettingsList{Schedules: []domain.Settings{{Name: "上班通勤", OriginID: "1080"}}}
+	if err := s.Save(list); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("settings file was not created: %v", err)
+	}
+}
+
+// TestSaveEmptyListRoundTrips checks deleting every schedule (via /manage)
+// produces a valid, re-loadable empty file rather than a decode error.
+func TestSaveEmptyListRoundTrips(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s := New(path)
+
+	if err := s.Save(domain.SettingsList{}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := s.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Schedules) != 0 {
+		t.Errorf("got %+v, want an empty list", got)
 	}
 }

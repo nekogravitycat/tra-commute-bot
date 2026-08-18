@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
@@ -141,19 +140,6 @@ func (b *Brief) RunDegraded(ctx context.Context, firedAt time.Time, scheduleName
 		Params:      b.params(firedAt, trip),
 	}
 	return b.deliver(ctx, domain.DegradedBrief(in, domain.Degradation{Stage: "run", Detail: detail}))
-}
-
-// RunIncomplete sends a short reminder instead of a brief when the schedule
-// fired but the live settings are not yet complete enough to plan a
-// journey — most commonly right after a fresh install, before /route,
-// /ready, /deadline and /earlyleave have all been set once. This is not the
-// §9.3 degraded path: nothing failed, the user simply has not finished
-// telling the bot what it needs to know.
-func (b *Brief) RunIncomplete(ctx context.Context, firedAt time.Time, scheduleName string, missing []string) (Result, error) {
-	in := domain.BriefInput{GeneratedAt: firedAt, Schedule: scheduleName}
-	detail := fmt.Sprintf("尚未完成互動設定，缺少：%s。請用 Telegram 傳 /help 查看指令",
-		strings.Join(missing, "、"))
-	return b.deliver(ctx, domain.DegradedBrief(in, domain.Degradation{Stage: "settings", Detail: detail}))
 }
 
 func (b *Brief) params(firedAt time.Time, trip domain.Settings) domain.Params {

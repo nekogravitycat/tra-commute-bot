@@ -2,15 +2,27 @@ package domain
 
 import "time"
 
-// Settings are the six trip parameters the user configures live, over
-// Telegram, rather than by editing config.yaml (see README "Configuring via
-// Telegram"). Everything else the brief needs — risk margin, the train-type
-// filter, certificate rules, and so on — stays in config.yaml, because those
-// are calibration knobs rather than facts about a particular morning.
+// Settings is one Schedule (§10.1): the complete set of trip parameters the
+// user configures live over Telegram, via /setup and /manage, rather than by
+// editing config.yaml. Everything else the brief needs — risk margin, the
+// train-type filter, certificate rules, and so on — stays in config.yaml,
+// because those are calibration knobs shared by every Schedule rather than
+// facts about one particular commute.
+//
+// A Schedule has exactly two states: absent, or fully populated. /setup only
+// writes one once every field below has been collected (§10.2 invariant 1),
+// so nothing in this package needs to reason about a partially configured
+// Schedule.
 type Settings struct {
+	// Name is the user's label for this rule (e.g. "上班通勤"), unique within
+	// a SettingsList. It is also the key used in state.json and in the guard
+	// (Schedule.Name), so a rename is a delete-and-recreate under the hood as
+	// far as the tick guard's history is concerned.
+	Name string
+
 	// ScheduleWeekdays and ScheduleAt together decide when the brief fires.
 	// Neither means anything without the other, so they are always set
-	// together (/schedule).
+	// together, in the same step of /setup or /manage's "改通知時間".
 	ScheduleWeekdays []time.Weekday
 	ScheduleAt       TimeOfDay
 
@@ -32,41 +44,72 @@ type Settings struct {
 	DestinationName string
 }
 
-// Complete reports whether every field needed to run a brief has been set,
-// and names whichever are still missing so /status and the incomplete-config
-// reminder can say exactly what to do next.
-//
-// The zero TimeOfday{00:00} doubles as "unset": no commute plan needs a
-// midnight ready time or deadline, so this is a safe sentinel rather than a
-// real ambiguity.
-func (s Settings) Complete() (bool, []string) {
-	var missing []string
-	if len(s.ScheduleWeekdays) == 0 || s.ScheduleAt == (TimeOfDay{}) {
-		missing = append(missing, "schedule")
-	}
-	if s.ReadyAt == (TimeOfDay{}) {
-		missing = append(missing, "ready")
-	}
-	if s.DeadlineAt == (TimeOfDay{}) {
-		missing = append(missing, "deadline")
-	}
-	if s.MaxEarlyLeave <= 0 {
-		missing = append(missing, "earlyleave")
-	}
-	if s.OriginID == "" || s.DestinationID == "" {
-		missing = append(missing, "route")
-	}
-	return len(missing) == 0, missing
-}
-
 // Route builds the Route value the brief renders the header from.
 func (s Settings) Route() Route {
 	return Route{OriginName: s.OriginName, DestinationName: s.DestinationName}
 }
 
-// Scheduling builds a single-schedule Scheduling from the live settings, to
-// be merged with the config-file-only guard parameters (tolerance, retry
-// window, skip dates) by the caller.
+// Schedule builds the guard-only view of this Settings row — the weekdays and
+// fire time DecideTicks matches against — to be merged with the config-file
+// guard parameters (tolerance, retry window, skip/extra dates) by the caller.
 func (s Settings) Schedule() Schedule {
-	return Schedule{Name: "commute", Weekdays: s.ScheduleWeekdays, At: s.ScheduleAt}
+	return Schedule{Name: s.Name, Weekdays: s.ScheduleWeekdays, At: s.ScheduleAt}
+}
+
+// SettingsList is every Schedule the user has configured, the on-disk shape
+// of settings.json (§10.8). Order is preserved across Save/Load so /manage's
+// listing stays stable between edits.
+type SettingsList struct {
+	Schedules []Settings
+}
+
+// Find returns the named Schedule, if any.
+func (l SettingsList) Find(name string) (Settings, bool) {
+	for _, s := range l.Schedules {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Settings{}, false
+}
+
+// NameTaken reports whether name is already used by another Schedule. Passing
+// the Schedule's own current name as except lets a rename check against every
+// other name without tripping on itself.
+func (l SettingsList) NameTaken(name, except string) bool {
+	for _, s := range l.Schedules {
+		if s.Name == name && s.Name != except {
+			return true
+		}
+	}
+	return false
+}
+
+// Upsert returns a copy of the list with s replacing the Schedule of the same
+// name, or appended if no such Schedule exists yet. This is the single write
+// path both /setup's "確認建立" and /manage's field edits go through, so a
+// Schedule is always replaced whole (§10.2 invariant 1) — never patched
+// field-by-field in place.
+func (l SettingsList) Upsert(s Settings) SettingsList {
+	out := SettingsList{Schedules: make([]Settings, len(l.Schedules))}
+	copy(out.Schedules, l.Schedules)
+	for i, existing := range out.Schedules {
+		if existing.Name == s.Name {
+			out.Schedules[i] = s
+			return out
+		}
+	}
+	out.Schedules = append(out.Schedules, s)
+	return out
+}
+
+// Remove returns a copy of the list with the named Schedule deleted.
+func (l SettingsList) Remove(name string) SettingsList {
+	out := SettingsList{Schedules: make([]Settings, 0, len(l.Schedules))}
+	for _, s := range l.Schedules {
+		if s.Name != name {
+			out.Schedules = append(out.Schedules, s)
+		}
+	}
+	return out
 }

@@ -39,8 +39,8 @@ func TestTickRunsAndRecords(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if !res.Ran {
-		t.Fatalf("the tick did not run: %s", res.Decision.Reason)
+	if !res.Ran() {
+		t.Fatalf("the tick did not run")
 	}
 	if len(n.sent) != 1 {
 		t.Errorf("sent %d messages, want 1", len(n.sent))
@@ -65,7 +65,7 @@ func TestTickIdempotent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("tick at %s: %v", hhmm, err)
 		}
-		if res.Ran {
+		if res.Ran() {
 			t.Errorf("the tick at %s ran again after a successful delivery", hhmm)
 		}
 	}
@@ -86,7 +86,7 @@ func TestTickQuietWhenNotDue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if res.Ran {
+	if res.Ran() {
 		t.Error("the tick ran outside its schedule")
 	}
 	if tt.calls != 0 || d.calls != 0 || len(n.sent) != 0 {
@@ -128,8 +128,8 @@ func TestTickRetriesThenGivesUp(t *testing.T) {
 	// Every tick inside the window retries.
 	for _, hhmm := range []string{"07:50", "07:51", "07:55"} {
 		res, _ := newTestTick(at(hhmm), st, b).Run(context.Background())
-		if !res.Ran {
-			t.Errorf("the tick at %s did not retry: %s", hhmm, res.Decision.Reason)
+		if !res.Ran() {
+			t.Errorf("the tick at %s did not retry", hhmm)
 		}
 	}
 	if got := st.state.Attempts["commute"].Count; got != 3 {
@@ -142,11 +142,14 @@ func TestTickRetriesThenGivesUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("give-up tick: %v", err)
 	}
-	if res.Decision.Action != domain.TickGiveUp {
-		t.Fatalf("action = %v, want give up", res.Decision.Action)
+	if len(res.Outcomes) != 1 {
+		t.Fatalf("outcomes = %v, want exactly 1", res.Outcomes)
 	}
-	if res.Result.Brief.Mode != domain.ModeDegraded {
-		t.Errorf("mode = %v, want degraded", res.Result.Brief.Mode)
+	if res.Outcomes[0].Decision.Action != domain.TickGiveUp {
+		t.Fatalf("action = %v, want give up", res.Outcomes[0].Decision.Action)
+	}
+	if res.Outcomes[0].Result.Brief.Mode != domain.ModeDegraded {
+		t.Errorf("mode = %v, want degraded", res.Outcomes[0].Result.Brief.Mode)
 	}
 	if !st.state.Attempts["commute"].GaveUp {
 		t.Error("the give-up must be recorded so it is not repeated")
@@ -155,7 +158,7 @@ func TestTickRetriesThenGivesUp(t *testing.T) {
 	// And stay quiet afterwards.
 	before := len(n.sent)
 	res, _ = newTestTick(at("08:06"), st, b).Run(context.Background())
-	if res.Ran {
+	if res.Ran() {
 		t.Error("the tick ran again after giving up")
 	}
 	if len(n.sent) != before {
@@ -175,7 +178,7 @@ func TestTickUnreadableState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !res.Ran {
+	if !res.Ran() {
 		t.Error("an unreadable state file must not suppress the brief")
 	}
 	if len(n.sent) != 1 {
@@ -195,7 +198,7 @@ func TestTickStateSaveFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a state write failure must not fail the run: %v", err)
 	}
-	if !res.Ran || len(n.sent) != 1 {
+	if !res.Ran() || len(n.sent) != 1 {
 		t.Error("the brief should still have been delivered")
 	}
 }
@@ -215,7 +218,7 @@ func TestTickDryRunLeavesNoTrace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !res.Ran {
+	if !res.Ran() {
 		t.Error("a dry run should still compute the brief")
 	}
 	if st.saves != 0 {

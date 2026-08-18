@@ -81,7 +81,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", outPath, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := tmpl.Execute(f, struct {
 		GeneratedAt string

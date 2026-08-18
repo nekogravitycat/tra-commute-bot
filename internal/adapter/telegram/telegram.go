@@ -84,7 +84,7 @@ func (n *Notifier) Send(ctx context.Context, m usecase.Message) error {
 	if err != nil {
 		return fmt.Errorf("telegram: send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	var out sendMessageResponse

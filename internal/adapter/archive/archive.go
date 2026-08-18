@@ -68,7 +68,7 @@ func (d *Dir) Archive(name string, payload []byte) error {
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		return fmt.Errorf("write archive: %w", err)
@@ -101,7 +101,7 @@ func (d *Dir) Prune() error {
 			continue
 		}
 		if day.Before(cutoff) {
-			os.Remove(filepath.Join(d.Path, e.Name()))
+			_ = os.Remove(filepath.Join(d.Path, e.Name()))
 		}
 	}
 	return nil

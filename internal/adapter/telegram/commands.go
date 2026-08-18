@@ -229,7 +229,7 @@ func (n *Notifier) callWithClient(ctx context.Context, client *http.Client, meth
 	if err != nil {
 		return nil, fmt.Errorf("telegram: %s: %w", method, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

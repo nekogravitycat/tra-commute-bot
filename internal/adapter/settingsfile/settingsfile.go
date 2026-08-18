@@ -169,10 +169,10 @@ func (s *Store) Save(list domain.SettingsList) error {
 		return fmt.Errorf("create temp settings: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	defer func() { _ = os.Remove(tmpName) }()
 
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("write temp settings: %w", err)
 	}
 	if err := tmp.Close(); err != nil {

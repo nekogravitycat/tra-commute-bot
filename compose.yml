@@ -10,7 +10,7 @@ services:
     image: tra-commute-bot:latest
     restart: unless-stopped
     env_file:
-      - env
+      - .env
     volumes:
       - ./configs/config.yaml:/etc/tra-commute/config.yaml:ro
       - tra-commute-data:/var/lib/tra-commute

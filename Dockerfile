@@ -1,7 +1,7 @@
 # tra-commute-bot: a single static binary, run as a long-lived process
 # (§4.2) — no cron, no systemd timer inside the container at all.
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26.5-alpine AS builder
 WORKDIR /src
 
 COPY go.mod go.sum ./

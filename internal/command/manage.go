@@ -49,7 +49,7 @@ func (r *Router) handleManagePick(ctx context.Context, chatID int64, data string
 func (r *Router) sendManageCard(ctx context.Context, chatID int64, s domain.Settings) {
 	sess := newEditSession(chatID, s, nil, time.Now())
 	r.setSession(chatID, sess)
-	r.sendKeyboard(ctx, card(s), manageCardKeyboard())
+	r.sendKeyboard(ctx, fmt.Sprintf("📋 %s\n%s", escName(s.Name), card(s)), manageCardKeyboard())
 }
 
 // handleManageCardCallback handles every button on a Schedule's card: the

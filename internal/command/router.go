@@ -42,6 +42,23 @@ func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state useca
 	}
 }
 
+// botCommands is the "/" menu Telegram shows in the chat's attachment tray
+// (via SetMyCommands) — kept in one place so it can't drift from the /help
+// text in render.go's helpMessage.
+var botCommands = []telegram.BotCommand{
+	{Command: "setup", Description: "建立一條新的通勤規則"},
+	{Command: "manage", Description: "查看、修改或刪除現有規則"},
+	{Command: "status", Description: "查看每條規則的狀態"},
+	{Command: "cancel", Description: "取消進行中的操作"},
+	{Command: "help", Description: "顯示這份說明"},
+}
+
+// SetMyCommands registers botCommands with Telegram. Call once at startup;
+// the list is persisted server-side, so this is not needed on every poll.
+func (r *Router) SetMyCommands(ctx context.Context) error {
+	return r.Bot.SetMyCommands(ctx, botCommands)
+}
+
 // HandleUpdate processes one update from getUpdates (§5.2 step 2).
 func (r *Router) HandleUpdate(ctx context.Context, u telegram.Update) {
 	switch {

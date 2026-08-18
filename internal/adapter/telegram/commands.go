@@ -150,6 +150,27 @@ func (n *Notifier) EditMessageReplyMarkup(ctx context.Context, messageID int, ma
 	return n.callExpectOK(ctx, "editMessageReplyMarkup", payload)
 }
 
+// BotCommand is one entry in the "/" menu Telegram shows in the chat's
+// attachment tray, set via SetMyCommands. Command excludes the leading "/".
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetMyCommands registers the bot's command list with Telegram so typing "/"
+// in the chat pops up the menu with each command's description, instead of
+// leaving the user to guess or read /help. It only needs calling once at
+// startup — Telegram persists the list server-side between runs.
+func (n *Notifier) SetMyCommands(ctx context.Context, commands []BotCommand) error {
+	payload, err := json.Marshal(struct {
+		Commands []BotCommand `json:"commands"`
+	}{Commands: commands})
+	if err != nil {
+		return fmt.Errorf("telegram: encode setMyCommands: %w", err)
+	}
+	return n.callExpectOK(ctx, "setMyCommands", payload)
+}
+
 // AnswerCallbackQuery acknowledges a button press. Telegram shows a loading
 // spinner on the button until this is called (or ~30s pass), so every
 // callback handler calls it — with a toast for user-facing feedback (a

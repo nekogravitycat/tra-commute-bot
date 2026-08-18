@@ -352,6 +352,10 @@ func (a *application) serve(log *slog.Logger) error {
 	}()
 
 	if a.router != nil {
+		if err := a.router.SetMyCommands(ctx); err != nil {
+			log.Warn("setMyCommands failed", "err", err)
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

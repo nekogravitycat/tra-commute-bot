@@ -62,7 +62,7 @@ func (r *Router) advance(ctx context.Context, sess *Session) {
 // straight away (§10.6).
 func (r *Router) finishFlow(ctx context.Context, sess *Session) {
 	if sess.Editing == "" {
-		r.send(ctx, "設定完成，請確認以下內容：\n\n"+card(sess.Draft))
+		r.send(ctx, fmt.Sprintf("✅ 設定完成：%s\n%s", escName(sess.Draft.Name), card(sess.Draft)))
 		r.sendKeyboard(ctx, "確認要建立這條規則嗎？", setupConfirmKeyboard())
 		return
 	}
@@ -148,13 +148,13 @@ func (r *Router) handleTimeText(ctx context.Context, sess *Session, f Field, tex
 	switch f {
 	case FieldReadyAt:
 		if sess.Draft.DeadlineAt != (domain.TimeOfDay{}) && minutesOf(t) >= minutesOf(sess.Draft.DeadlineAt) {
-			r.send(ctx, fmt.Sprintf("T_ready %s 晚於或等於 deadline %s，請輸入更早的時刻", t, sess.Draft.DeadlineAt))
+			r.send(ctx, fmt.Sprintf("最早到站 %s 晚於或等於最晚抵達 %s，請輸入更早的時刻", t, sess.Draft.DeadlineAt))
 			return
 		}
 		sess.Draft.ReadyAt = t
 	case FieldDeadlineAt:
 		if sess.Draft.ReadyAt != (domain.TimeOfDay{}) && minutesOf(t) <= minutesOf(sess.Draft.ReadyAt) {
-			r.send(ctx, fmt.Sprintf("deadline %s 早於或等於 T_ready %s，請輸入 %s 之後的時刻", t, sess.Draft.ReadyAt, sess.Draft.ReadyAt))
+			r.send(ctx, fmt.Sprintf("最晚抵達 %s 早於或等於最早到站 %s，請輸入 %s 之後的時刻", t, sess.Draft.ReadyAt, sess.Draft.ReadyAt))
 			return
 		}
 		sess.Draft.DeadlineAt = t

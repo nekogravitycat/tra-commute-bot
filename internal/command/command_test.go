@@ -281,7 +281,7 @@ func TestManageEditReadyAt(t *testing.T) {
 	if s.ReadyAt.String() != "08:10" {
 		t.Errorf("ready at = %s, want 08:10", s.ReadyAt)
 	}
-	if !strings.Contains(mb.all()[len(mb.all())-2], "T_ready 已從 08:20 改為 08:10") {
+	if !strings.Contains(mb.all()[len(mb.all())-2], "最早到站 已從 08:20 改為 08:10") {
 		t.Errorf("expected a diff message, got: %v", mb.all())
 	}
 }

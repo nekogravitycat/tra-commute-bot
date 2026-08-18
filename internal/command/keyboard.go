@@ -146,7 +146,7 @@ func manageListKeyboard(list domain.SettingsList) telegram.InlineKeyboardMarkup 
 
 func manageCardKeyboard() telegram.InlineKeyboardMarkup {
 	return telegram.InlineKeyboardMarkup{InlineKeyboard: [][]telegram.InlineKeyboardButton{
-		row(btn("改路線", cbEditRoute), btn("改 T_ready", cbEditReady), btn("改 deadline", cbEditDeadline)),
+		row(btn("改路線", cbEditRoute), btn("改最早到站", cbEditReady), btn("改最晚抵達", cbEditDeadline)),
 		row(btn("改通知時間", cbEditNotify), btn("改提早出門上限", cbEditEarly), btn("改名字", cbEditName)),
 		row(btn("🗑 刪除此規則", cbDelete), btn("⬅ 返回列表", cbManageBack)),
 	}}

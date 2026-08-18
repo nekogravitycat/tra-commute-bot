@@ -15,16 +15,22 @@ import (
 // rendering of everything after it.
 func escName(s string) string { return html.EscapeString(s) }
 
+// cardRule is the separator line framing card()'s body top and bottom.
+const cardRule = "──────────"
+
 // card renders the summary shown at the end of /setup (§10.5) and at the top
 // of a schedule's /manage view (§10.6) — the same shape both places, since
-// they answer the same question: "what exactly is this rule, right now?"
+// they answer the same question: "what exactly is this rule, right now?" The
+// name and any context-specific heading (e.g. "✅ 設定完成") are the caller's
+// job, since the two call sites mean different things by it.
 func card(s domain.Settings) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "┌ %s ┐\n", escName(s.Name))
+	fmt.Fprintf(&b, "%s\n", cardRule)
 	fmt.Fprintf(&b, "%s → %s\n", html.EscapeString(s.OriginName), html.EscapeString(s.DestinationName))
 	fmt.Fprintf(&b, "通知：%s %s\n", weekdaysZh(s.ScheduleWeekdays), s.ScheduleAt)
-	fmt.Fprintf(&b, "T_ready %s　deadline %s\n", s.ReadyAt, s.DeadlineAt)
-	fmt.Fprintf(&b, "提早出門上限 %d 分", int(s.MaxEarlyLeave/time.Minute))
+	fmt.Fprintf(&b, "最早到站 %s　最晚抵達 %s\n", s.ReadyAt, s.DeadlineAt)
+	fmt.Fprintf(&b, "提早出門上限 %d 分\n", int(s.MaxEarlyLeave/time.Minute))
+	fmt.Fprintf(&b, "%s", cardRule)
 	return b.String()
 }
 
@@ -39,9 +45,9 @@ func fieldLabel(f Field) string {
 	case FieldDestination:
 		return "目的地站"
 	case FieldReadyAt:
-		return "T_ready"
+		return "最早到站"
 	case FieldDeadlineAt:
-		return "deadline"
+		return "最晚抵達"
 	case FieldWeekdays:
 		return "通知星期"
 	case FieldNotifyAt:

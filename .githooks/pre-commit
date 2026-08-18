@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs the same checks as CI's lint job before a commit is created.
+# Enable once per clone with: git config core.hooksPath .githooks
+set -e
+
+if ! command -v golangci-lint >/dev/null 2>&1; then
+	echo "pre-commit: golangci-lint not installed, skipping (CI will still check)" >&2
+	exit 0
+fi
+
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+	echo "pre-commit: gofmt needs to be run on:" >&2
+	echo "$unformatted" >&2
+	exit 1
+fi
+
+go vet ./...
+golangci-lint run ./...

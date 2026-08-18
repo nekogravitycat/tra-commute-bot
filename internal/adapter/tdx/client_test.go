@@ -68,7 +68,7 @@ func TestAuthenticate(t *testing.T) {
 }
 
 func TestAuthenticateRejectsEmptyToken(t *testing.T) {
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"expires_in":86400}`))
 	}), nil)
 
@@ -80,7 +80,7 @@ func TestAuthenticateRejectsEmptyToken(t *testing.T) {
 // TestUnauthenticatedRequest checks a missing token is caught locally rather
 // than spent on a request that is certain to be rejected.
 func TestUnauthenticatedRequest(t *testing.T) {
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("no request should reach the server without a token")
 	}), nil)
 
@@ -155,7 +155,7 @@ func TestTimetableOvernight(t *testing.T) {
 	     {"StopSequence":8,"StationID":"1080","StationName":{"Zh_tw":"桃園"},"ArrivalTime":"23:26","DepartureTime":"23:28","SuspendedFlag":0},
 	     {"StopSequence":17,"StationID":"1000","StationName":{"Zh_tw":"臺北"},"ArrivalTime":"00:02","DepartureTime":"00:04","SuspendedFlag":0}]}]}`
 
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(body))
 	}), nil)
 	c.token = "tok"
@@ -200,7 +200,7 @@ func TestTimetableSuspendedFlags(t *testing.T) {
 			     {"StopSequence":8,"StationID":"1080","ArrivalTime":"08:14","DepartureTime":"08:16","SuspendedFlag":` + itoa(tc.opFlag) + `},
 			     {"StopSequence":17,"StationID":"1000","ArrivalTime":"08:57","DepartureTime":"08:59","SuspendedFlag":0}]}]}`
 
-			c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Write([]byte(body))
 			}), nil)
 			c.token = "tok"
@@ -233,7 +233,7 @@ func TestTimetableSkipsUnusableEntries(t *testing.T) {
 	   "StopTimes":[{"StopSequence":8,"StationID":"1080","DepartureTime":"08:16"},
 	                {"StopSequence":17,"StationID":"1000","ArrivalTime":"08:57"}]}]}`
 
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(body))
 	}), nil)
 	c.token = "tok"
@@ -285,7 +285,7 @@ func TestRateLimitBackoff(t *testing.T) {
 	var calls atomic.Int32
 	var slept []time.Duration
 
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if calls.Add(1) <= 2 {
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte(`{"message":"API rate limit exceeded"}`))
@@ -318,7 +318,7 @@ func TestRateLimitExhausted(t *testing.T) {
 	var calls atomic.Int32
 	var slept []time.Duration
 
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 	}), &slept)
@@ -344,7 +344,7 @@ func TestRateLimitExhausted(t *testing.T) {
 // is worth waiting out; retrying a broken endpoint just delays the fallback.
 func TestServerErrorNotRetried(t *testing.T) {
 	var calls atomic.Int32
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("upstream exploded"))
@@ -363,7 +363,7 @@ func TestServerErrorNotRetried(t *testing.T) {
 // what keeps the flow clear of the rate limit in the first place.
 func TestThrottleSpacesRequests(t *testing.T) {
 	var slept []time.Duration
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(fixture(t, "live_board.json"))
 	}))
 	defer srv.Close()
@@ -396,7 +396,7 @@ func TestThrottleSpacesRequests(t *testing.T) {
 // TDX has moved on within minutes.
 func TestArchiverReceivesRawBody(t *testing.T) {
 	got := map[string][]byte{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(fixture(t, "live_board.json"))
 	}))
 	defer srv.Close()
@@ -418,7 +418,7 @@ func TestArchiverReceivesRawBody(t *testing.T) {
 }
 
 func TestMalformedJSON(t *testing.T) {
-	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"TrainLiveBoards": [ truncated`))
 	}), nil)
 	c.token = "tok"

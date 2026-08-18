@@ -21,6 +21,7 @@ import (
 // Field is one question in a collection flow.
 type Field int
 
+// The fields collected by a schedule flow, in collection order.
 const (
 	FieldName Field = iota
 	FieldOrigin

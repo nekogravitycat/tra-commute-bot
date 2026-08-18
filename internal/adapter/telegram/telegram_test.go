@@ -53,7 +53,7 @@ func TestSend(t *testing.T) {
 // answers 200 with ok:false for several real failures, so the status code
 // alone is not enough to conclude the message was delivered.
 func TestSendAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte(`{"ok":false,"error_code":400,"description":"can't parse entities"}`))
 	}))
@@ -70,7 +70,7 @@ func TestSendAPIError(t *testing.T) {
 }
 
 func TestSendOKFalseWithHTTP200(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"ok":false,"description":"chat not found"}`))
 	}))
 	defer srv.Close()
@@ -82,7 +82,7 @@ func TestSendOKFalseWithHTTP200(t *testing.T) {
 }
 
 func TestSendUnreachable(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	base := srv.URL
 	srv.Close() // nothing is listening any more
 
@@ -93,7 +93,7 @@ func TestSendUnreachable(t *testing.T) {
 }
 
 func TestSendCancelledContext(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"ok":true}`))
 	}))
 	defer srv.Close()

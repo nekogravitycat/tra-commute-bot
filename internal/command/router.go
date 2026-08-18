@@ -183,7 +183,7 @@ func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) 
 	}
 }
 
-func (r *Router) handleStatus(ctx context.Context, chatID int64) {
+func (r *Router) handleStatus(ctx context.Context, _ int64) {
 	list := r.loadSettings(ctx)
 	state, err := r.State.Load()
 	if err != nil {
@@ -192,7 +192,7 @@ func (r *Router) handleStatus(ctx context.Context, chatID int64) {
 	r.send(ctx, statusMessage(list, state, time.Now()))
 }
 
-func (r *Router) handleHelp(ctx context.Context, chatID int64) {
+func (r *Router) handleHelp(ctx context.Context, _ int64) {
 	list := r.loadSettings(ctx)
 	r.send(ctx, helpMessage(len(list.Schedules) > 0))
 }

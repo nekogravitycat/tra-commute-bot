@@ -87,7 +87,7 @@ func LoadDotEnv(path string) error {
 		}
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
@@ -104,7 +104,7 @@ func LoadDotEnv(path string) error {
 		// The real environment always wins, so a shell override during
 		// debugging is never silently undone by a stale file.
 		if _, set := os.LookupEnv(key); !set {
-			os.Setenv(key, value)
+			_ = os.Setenv(key, value)
 		}
 	}
 	return sc.Err()

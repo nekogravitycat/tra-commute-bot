@@ -14,7 +14,7 @@ import (
 // startManage shows the §10.6 schedule list. Any prior card/edit session is
 // dropped: picking a schedule (mng:pick:<i>) re-reads the list fresh rather
 // than trusting stale session state, so nothing needs to survive here.
-func (r *Router) startManage(ctx context.Context, chatID int64, now time.Time) {
+func (r *Router) startManage(ctx context.Context, chatID int64, _ time.Time) {
 	r.clearSession(chatID)
 	list := r.loadSettings(ctx)
 	if len(list.Schedules) == 0 {

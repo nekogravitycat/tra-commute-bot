@@ -102,6 +102,7 @@ type ActorStore struct {
 	Ctx context.Context
 }
 
+// Load reads the current settings through the actor's serialized path.
 func (a ActorStore) Load() (domain.SettingsList, error) {
 	res, err := a.Actor.Do(a.Ctx, func(cur domain.SettingsList) (domain.SettingsList, any) {
 		return cur, cur
@@ -112,6 +113,7 @@ func (a ActorStore) Load() (domain.SettingsList, error) {
 	return res.(domain.SettingsList), nil
 }
 
+// Save writes the given settings through the actor's serialized path.
 func (a ActorStore) Save(list domain.SettingsList) error {
 	_, err := a.Actor.Do(a.Ctx, func(domain.SettingsList) (domain.SettingsList, any) {
 		return list, nil

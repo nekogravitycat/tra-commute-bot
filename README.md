@@ -249,6 +249,14 @@ package drives full `/setup` and `/manage` flows — including the weekday
 picker and station disambiguation — against a mock Bot API and an in-memory
 settings actor.
 
+A pre-commit hook mirrors CI's lint job (`gofmt`, `go vet`,
+[`golangci-lint`](https://golangci-lint.run/)) so a failure shows up before
+you push instead of after. Enable it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Message format
 
 Two constraints shape the output, both discovered on a real handset rather

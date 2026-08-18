@@ -44,7 +44,7 @@ func TestGetUpdates(t *testing.T) {
 }
 
 func TestGetUpdatesAPIError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"ok":false,"description":"Unauthorized"}`))
 	}))
 	defer srv.Close()
@@ -122,7 +122,7 @@ func TestAnswerCallbackQuery(t *testing.T) {
 }
 
 func TestAnswerCallbackQueryError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"ok":false,"description":"query is too old"}`))
 	}))
 	defer srv.Close()

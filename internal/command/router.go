@@ -23,24 +23,22 @@ type Router struct {
 	State    usecase.StateStore
 	Stations []domain.Station
 	Log      *slog.Logger
-	// ChatID is the single chat this bot answers to (TELEGRAM_CHAT_ID).
-	// Anything from another chat is ignored outright: the spec is explicit
-	// that this is a single-user system, and a stranger who finds the bot
-	// must not be able to see or change anyone's commute settings.
-	ChatID string
 
-	// chatID is ChatID parsed once at construction, rather than formatting
-	// every incoming update's int64 chat ID back to a string to compare —
-	// isOurChat runs on every single message and callback the process ever
-	// receives.
+	// chatID is the single chat this bot answers to (TELEGRAM_CHAT_ID),
+	// parsed once at construction. Anything from another chat is ignored
+	// outright: the spec is explicit that this is a single-user system, and a
+	// stranger who finds the bot must not be able to see or change anyone's
+	// commute settings. Parsing it once also keeps isOurChat — which runs on
+	// every single message and callback the process ever receives — down to
+	// an integer comparison.
 	chatID int64
 
 	mu       sync.Mutex
 	sessions map[int64]*Session
 }
 
-// NewRouter builds a Router. Bot, Actor, State, Stations and ChatID must all
-// be set. chatID must parse as an int64 — the composition root gets it from
+// NewRouter builds a Router. Bot, Actor, State and Stations must all be set,
+// and chatID must parse as an int64 — the composition root gets it from
 // config.Credentials.TelegramChatID, which config.LoadCredentials reads
 // straight from the environment with no validation of its own, so a typo'd
 // TELEGRAM_CHAT_ID surfaces here instead of as a router that silently
@@ -51,7 +49,7 @@ func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state useca
 		log.Error("TELEGRAM_CHAT_ID is not a valid chat ID, the bot will answer no chat", "value", chatID, "err", err)
 	}
 	return &Router{
-		Bot: bot, Actor: actor, State: state, Stations: stations, ChatID: chatID, Log: log,
+		Bot: bot, Actor: actor, State: state, Stations: stations, Log: log,
 		chatID:   id,
 		sessions: map[int64]*Session{},
 	}
@@ -119,16 +117,16 @@ func (r *Router) handleMessage(ctx context.Context, msg telegram.Message) {
 		r.startSetup(ctx, msg.Chat.ID, now)
 		return
 	case "/manage":
-		r.startManage(ctx, msg.Chat.ID, now)
+		r.startManage(ctx, msg.Chat.ID)
 		return
 	case "/usualtrain":
 		r.startUsualTrain(ctx, msg.Chat.ID)
 		return
 	case "/status":
-		r.handleStatus(ctx, msg.Chat.ID)
+		r.handleStatus(ctx)
 		return
 	case "/help", "/start":
-		r.handleHelp(ctx, msg.Chat.ID)
+		r.handleHelp(ctx)
 		return
 	case "/cancel":
 		r.handleCancel(ctx, msg.Chat.ID)
@@ -181,7 +179,7 @@ func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) 
 		return
 	case data == cbManageBack:
 		r.answer(ctx, cq.ID, "")
-		r.startManage(ctx, chatID, time.Now())
+		r.startManage(ctx, chatID)
 		return
 	case strings.HasPrefix(data, cbManagePick):
 		r.answer(ctx, cq.ID, "")
@@ -210,7 +208,9 @@ func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) 
 	}
 }
 
-func (r *Router) handleStatus(ctx context.Context, _ int64) {
+// handleStatus answers /status. It takes no chat ID: every reply goes to the
+// one configured chat, which isOurChat has already vouched for.
+func (r *Router) handleStatus(ctx context.Context) {
 	list := r.loadSettings(ctx)
 	state, err := r.State.Load()
 	if err != nil {
@@ -219,7 +219,7 @@ func (r *Router) handleStatus(ctx context.Context, _ int64) {
 	r.send(ctx, statusMessage(list, state, time.Now()))
 }
 
-func (r *Router) handleHelp(ctx context.Context, _ int64) {
+func (r *Router) handleHelp(ctx context.Context) {
 	list := r.loadSettings(ctx)
 	r.send(ctx, helpMessage(len(list.Schedules) > 0))
 }

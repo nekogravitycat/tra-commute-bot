@@ -31,7 +31,7 @@ func usualTrainListText(nos []string) string {
 	if len(nos) == 0 {
 		return fmt.Sprintf("<b>常搭班次</b>\n\n目前尚未設定常搭班次。\n\n%s", explain)
 	}
-	return fmt.Sprintf("<b>常搭班次</b>\n\n目前：%s\n\n%s", escName(strings.Join(nos, "、")), explain)
+	return fmt.Sprintf("<b>常搭班次</b>\n\n目前：%s\n\n%s", esc(strings.Join(nos, "、")), explain)
 }
 
 func (r *Router) sendUsualTrainList(ctx context.Context) {

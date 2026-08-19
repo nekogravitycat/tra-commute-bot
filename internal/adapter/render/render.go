@@ -97,7 +97,7 @@ func (t Telegram) renderNormal(b domain.Brief) string {
 	}
 
 	fmt.Fprintf(&s, "\n%s\n", bold("其他選項"))
-	s.WriteString(pre(t.statusTable(b)))
+	s.WriteString(pre(t.candidateTable(b)))
 	s.WriteString(t.footer(b))
 	return s.String()
 }
@@ -147,7 +147,7 @@ func (t Telegram) renderLate(b domain.Brief) string {
 	}
 
 	fmt.Fprintf(&s, "\n%s\n", bold("全部班次"))
-	s.WriteString(pre(t.latenessTable(b)))
+	s.WriteString(pre(t.candidateTable(b)))
 	s.WriteString(t.footer(b))
 	return s.String()
 }
@@ -260,20 +260,14 @@ func degradationText(d *domain.Degradation) string {
 
 // ------------------------------------------------------------------- fragments
 
-func (t Telegram) statusTable(b domain.Brief) string {
+// candidateTable is the comparison grid both the normal and the late template
+// print. They ask the same question of the same rows — which trains are
+// there, how late, and what does that make of each one — so they share one
+// layout rather than two that have to be kept looking alike.
+func (t Telegram) candidateTable(b domain.Brief) string {
 	var tb table
 	// The status column carries no heading: the labels read as themselves,
 	// and the key below the table translates them.
-	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", ""}
-	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignLeft}
-	for _, c := range t.tableRows(b) {
-		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), lateStatus(b, c))
-	}
-	return tb.render()
-}
-
-func (t Telegram) latenessTable(b domain.Brief) string {
-	var tb table
 	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", ""}
 	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignLeft}
 	for _, c := range t.tableRows(b) {
@@ -333,8 +327,8 @@ func status(b domain.Brief, c domain.Candidate) string {
 }
 
 // lateStatus is status, with the minutes late folded into the LATE label
-// itself. This is the lateness table's only record of the figure now that it
-// has no MIN column of its own.
+// itself. This is the table's only record of the figure, now that there is no
+// MIN column of its own.
 func lateStatus(b domain.Brief, c domain.Candidate) string {
 	s := status(b, c)
 	if s == statusLate {

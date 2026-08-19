@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -56,21 +57,23 @@ var weekdayCallbackCode = map[time.Weekday]string{
 	time.Friday: "fri", time.Saturday: "sat", time.Sunday: "sun",
 }
 
-var weekdayFromCode = map[string]time.Weekday{
-	"mon": time.Monday, "tue": time.Tuesday, "wed": time.Wednesday, "thu": time.Thursday,
-	"fri": time.Friday, "sat": time.Saturday, "sun": time.Sunday,
-}
+// weekdayFromCode reads a button's callback code back. It is derived from
+// weekdayCallbackCode rather than written out again, so the two directions
+// cannot drift apart.
+var weekdayFromCode = func() map[string]time.Weekday {
+	out := make(map[string]time.Weekday, len(weekdayCallbackCode))
+	for wd, code := range weekdayCallbackCode {
+		out[code] = wd
+	}
+	return out
+}()
 
 // weekdaysZh renders a weekday set in TRA-bulletin order (一二三四五六日),
 // the compact form used in every card and list row.
 func weekdaysZh(wds []time.Weekday) string {
-	set := map[time.Weekday]bool{}
-	for _, w := range wds {
-		set[w] = true
-	}
 	var b strings.Builder
 	for _, w := range weekdayOrder {
-		if set[w] {
+		if slices.Contains(wds, w) {
 			b.WriteString(weekdayLabelZh[w])
 		}
 	}

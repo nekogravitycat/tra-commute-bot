@@ -14,7 +14,7 @@ import (
 // startManage shows the §10.6 schedule list. Any prior card/edit session is
 // dropped: picking a schedule (mng:pick:<i>) re-reads the list fresh rather
 // than trusting stale session state, so nothing needs to survive here.
-func (r *Router) startManage(ctx context.Context, chatID int64, _ time.Time) {
+func (r *Router) startManage(ctx context.Context, chatID int64) {
 	r.clearSession(chatID)
 	list := r.loadSettings(ctx)
 	if len(list.Schedules) == 0 {
@@ -49,7 +49,7 @@ func (r *Router) handleManagePick(ctx context.Context, chatID int64, data string
 func (r *Router) sendManageCard(ctx context.Context, chatID int64, s domain.Settings) {
 	sess := newEditSession(chatID, s, nil, time.Now())
 	r.setSession(chatID, sess)
-	r.sendKeyboard(ctx, fmt.Sprintf("📋 %s\n%s", escName(s.Name), card(s)), manageCardKeyboard())
+	r.sendKeyboard(ctx, fmt.Sprintf("📋 %s\n%s", esc(s.Name), card(s)), manageCardKeyboard())
 }
 
 // handleManageCardCallback handles every button on a Schedule's card: the
@@ -126,7 +126,7 @@ func (r *Router) applyEdit(ctx context.Context, sess *Session) {
 	}
 	// Only reachable if the schedule was deleted by a concurrent /manage
 	// session between the read and the write above.
-	r.startManage(ctx, sess.ChatID, time.Now())
+	r.startManage(ctx, sess.ChatID)
 }
 
 func (r *Router) sendDeleteConfirm(ctx context.Context, sess *Session) {
@@ -138,7 +138,7 @@ func (r *Router) sendDeleteConfirm(ctx context.Context, sess *Session) {
 	if state.SucceededOn(sess.Original.Name, time.Now()) {
 		status = "今天已成功通知"
 	}
-	text := fmt.Sprintf("確定要刪除「%s」嗎？（%s）\n這個動作無法復原。", escName(sess.Original.Name), status)
+	text := fmt.Sprintf("確定要刪除「%s」嗎？（%s）\n這個動作無法復原。", esc(sess.Original.Name), status)
 	r.sendKeyboard(ctx, text, deleteConfirmKeyboard())
 }
 
@@ -154,8 +154,8 @@ func (r *Router) confirmDelete(ctx context.Context, sess *Session) {
 		return
 	}
 	r.clearScheduleState(name)
-	r.send(ctx, fmt.Sprintf("已刪除「%s」", escName(name)))
-	r.startManage(ctx, sess.ChatID, time.Now())
+	r.send(ctx, fmt.Sprintf("已刪除「%s」", esc(name)))
+	r.startManage(ctx, sess.ChatID)
 }
 
 // clearScheduleState wipes the deleted Schedule's guard history (§10.6): a

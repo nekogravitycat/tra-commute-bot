@@ -107,7 +107,7 @@ func TestStateActorStoreReadYourWrites(t *testing.T) {
 	defer cancel()
 	go actor.Run(ctx)
 
-	as := StateActorStore{Actor: actor, Ctx: ctx}
+	as := ActorStore[domain.TickState]{Actor: actor, Ctx: ctx}
 	if err := as.Save(domain.TickState{LastSuccess: map[string]string{"上班通勤": "2026-08-19"}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}

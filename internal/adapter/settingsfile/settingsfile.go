@@ -3,10 +3,10 @@
 // max early leave — as JSON on disk, so settings.json survives a restart and
 // is visible to the next tick without either side having to share memory.
 //
-// It mirrors internal/adapter/statefile deliberately: same atomic
-// write-to-temp-then-rename save, same "a missing file is not an error"
-// load, because a fresh install has no schedules yet and that must not block
-// /setup from working.
+// It mirrors internal/adapter/statefile deliberately: same atomic save (both
+// go through internal/platform/atomicfile), same "a missing file is not an
+// error" load, because a fresh install has no schedules yet and that must not
+// block /setup from working.
 package settingsfile
 
 import (
@@ -15,10 +15,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
+	"github.com/nekogravitycat/tra-commute-bot/internal/platform/atomicfile"
 )
 
 // Store reads and writes settings.json at Path.
@@ -169,34 +169,8 @@ func (s *Store) Save(list domain.SettingsList) error {
 	if err != nil {
 		return fmt.Errorf("encode settings: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(s.Path), 0o755); err != nil {
-		return fmt.Errorf("create settings dir: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(s.Path), ".settings-*.json")
-	if err != nil {
-		return fmt.Errorf("create temp settings: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("write temp settings: %w", err)
-	}
-	// Flushed to disk before the rename that makes it visible — otherwise a
-	// crash between the rename and the OS's own lazy flush can leave the
-	// now-current file empty or truncated, which is exactly the torn write
-	// this atomic-rename dance exists to prevent in the first place.
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("sync temp settings: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp settings: %w", err)
-	}
-	if err := os.Rename(tmpName, s.Path); err != nil {
-		return fmt.Errorf("replace settings: %w", err)
+	if err := atomicfile.Write(s.Path, data); err != nil {
+		return fmt.Errorf("save settings: %w", err)
 	}
 	return nil
 }

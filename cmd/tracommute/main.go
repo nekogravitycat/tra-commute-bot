@@ -117,25 +117,35 @@ func run() error {
 	// notify-loop-plus-command-loop process (§4.2) that the rest of the day
 	// actually runs as.
 	if o.at != "" || o.dryRun || o.force {
-		now, err := resolveClock(o, cfg.Location)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-
-		if o.force {
-			return app.forceRun(ctx, now, o, log)
-		}
-		res, err := app.tick(now, app.settingsStore, app.state, o, log).Run(ctx)
-		if err != nil {
-			return err
-		}
-		report(res, o, log)
-		return nil
+		return app.runOnce(o, cfg.Location, log)
 	}
-
 	return app.serve(log)
+}
+
+// runOnce is the one-shot debugging path. It reads and writes the file-backed
+// stores directly rather than through the actors: nothing else is running, so
+// there is no second loop for a bare Load/Save to race with, and starting two
+// goroutines to serialize a single tick against nobody would only obscure
+// what the tick did.
+func (a *application) runOnce(o options, loc *time.Location, log *slog.Logger) error {
+	now, err := resolveClock(o, loc)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	if o.force {
+		return a.forceRun(ctx, now, o, log)
+	}
+	res, err := a.tick(now, a.settingsStore, a.state, o.dryRun, log).Run(ctx)
+	if err != nil {
+		return err
+	}
+	for _, out := range res.Outcomes {
+		reportOne(out.Result, o, log)
+	}
+	return nil
 }
 
 // application holds the wired dependencies.
@@ -282,7 +292,7 @@ func buildBot(o options, cfg config.Config) (*telegram.Notifier, error) {
 	}), nil
 }
 
-func (a *application) tick(now time.Time, settings usecase.SettingsStore, state usecase.StateStore, o options, log *slog.Logger) *usecase.Tick {
+func (a *application) tick(now time.Time, settings usecase.SettingsStore, state usecase.StateStore, dryRun bool, log *slog.Logger) *usecase.Tick {
 	return &usecase.Tick{
 		Clock:       clock.Fixed{At: now},
 		State:       state,
@@ -293,7 +303,7 @@ func (a *application) tick(now time.Time, settings usecase.SettingsStore, state 
 		ExtraDates:  a.guard.ExtraDates,
 		Tolerance:   a.guard.Tolerance,
 		RetryWindow: a.guard.RetryWindow,
-		DryRun:      o.dryRun,
+		DryRun:      dryRun,
 	}
 }
 
@@ -354,8 +364,8 @@ func (a *application) serve(log *slog.Logger) error {
 		a.stateActor.Run(ctx)
 	}()
 
-	settings := usecase.ActorStore{Actor: a.settingsActor, Ctx: ctx}
-	state := usecase.StateActorStore{Actor: a.stateActor, Ctx: ctx}
+	settings := usecase.ActorStore[domain.SettingsList]{Actor: a.settingsActor, Ctx: ctx}
+	state := usecase.ActorStore[domain.TickState]{Actor: a.stateActor, Ctx: ctx}
 
 	wg.Add(1)
 	go func() {
@@ -413,17 +423,13 @@ func (a *application) runTick(ctx context.Context, settings usecase.SettingsStor
 	defer cancel()
 
 	now := clock.Real{Loc: a.loc}.Now()
-	t := a.tick(now, settings, state, options{}, log)
+	t := a.tick(now, settings, state, false, log)
 	res, err := t.Run(tickCtx)
 	if err != nil {
 		log.Error("tick run failed", "err", err)
 	}
 	for _, out := range res.Outcomes {
-		log.Info("brief delivered",
-			"schedule", out.Decision.Schedule.Name,
-			"mode", out.Result.Brief.Mode.String(),
-			"recommended", recommendedNo(out.Result.Brief),
-			"candidates", len(out.Result.Brief.Plan.Candidates))
+		logDelivered(log, out.Result)
 	}
 }
 
@@ -476,21 +482,21 @@ func (a *application) handleUpdateSafely(ctx context.Context, log *slog.Logger, 
 	a.router.HandleUpdate(ctx, u)
 }
 
-func report(res usecase.TickResult, o options, log *slog.Logger) {
-	if !res.Ran() {
-		return
-	}
-	for _, out := range res.Outcomes {
-		reportOne(out.Result, o, log)
-	}
-}
-
 func reportOne(res usecase.Result, o options, log *slog.Logger) {
 	if o.dryRun {
 		fmt.Println(res.Message.Text)
 		return
 	}
+	logDelivered(log, res)
+}
+
+// logDelivered is the one record that a brief reached the user, and of what it
+// told them. The schedule name comes off the brief itself, so the notify loop
+// and the one-shot path log the same fields without either having to carry the
+// name separately.
+func logDelivered(log *slog.Logger, res usecase.Result) {
 	log.Info("brief delivered",
+		"schedule", res.Brief.Schedule,
 		"mode", res.Brief.Mode.String(),
 		"recommended", recommendedNo(res.Brief),
 		"candidates", len(res.Brief.Plan.Candidates))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
@@ -44,7 +45,7 @@ func (t *Tick) scheduling(list domain.SettingsList) domain.Scheduling {
 	schedules := make([]domain.Schedule, 0, len(list.Schedules))
 	for _, s := range list.Schedules {
 		sch := s.Schedule()
-		sch.Dates = append(append([]string{}, sch.Dates...), t.ExtraDates...)
+		sch.Dates = slices.Concat(sch.Dates, t.ExtraDates)
 		schedules = append(schedules, sch)
 	}
 	return domain.Scheduling{

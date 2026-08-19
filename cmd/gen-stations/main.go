@@ -11,11 +11,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"text/template"
@@ -26,6 +25,7 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/tdx"
 	"github.com/nekogravitycat/tra-commute-bot/internal/config"
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
+	"github.com/nekogravitycat/tra-commute-bot/internal/platform/atomicfile"
 )
 
 const outPath = "internal/domain/stations_data.go"
@@ -78,18 +78,13 @@ func run() error {
 		return stations[i].ID < stations[j].ID
 	})
 
-	// Rendered to a temp file first and renamed into place only on success —
+	// Rendered into memory first and written only on success —
 	// os.Create(outPath) directly would truncate the existing, working
 	// stations_data.go before tmpl.Execute even runs, so a rendering failure
-	// would destroy the last good catalog instead of just failing to update it.
-	tmp, err := os.CreateTemp(filepath.Dir(outPath), ".stations-*.go")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmpl.Execute(tmp, struct {
+	// would destroy the last good catalog instead of just failing to update
+	// it. atomicfile.Write gives the same guarantee for the write itself.
+	var out bytes.Buffer
+	if err := tmpl.Execute(&out, struct {
 		GeneratedAt string
 		Count       int
 		Stations    []domain.Station
@@ -98,14 +93,10 @@ func run() error {
 		Count:       len(stations),
 		Stations:    stations,
 	}); err != nil {
-		_ = tmp.Close()
 		return fmt.Errorf("render %s: %w", outPath, err)
 	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
-	}
-	if err := os.Rename(tmpName, outPath); err != nil {
-		return fmt.Errorf("replace %s: %w", outPath, err)
+	if err := atomicfile.Write(outPath, out.Bytes()); err != nil {
+		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 
 	fmt.Printf("wrote %d stations to %s\n", len(stations), outPath)

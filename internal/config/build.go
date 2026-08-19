@@ -52,16 +52,8 @@ func (f File) Build() (Config, error) {
 
 	c.SkipDates = f.SkipDates
 	c.ExtraDates = f.ExtraDates
-	for _, d := range f.SkipDates {
-		if _, err := time.Parse("2006-01-02", d); err != nil {
-			errs = append(errs, fmt.Sprintf("skip_dates: %q must be yyyy-MM-dd", d))
-		}
-	}
-	for _, d := range f.ExtraDates {
-		if _, err := time.Parse("2006-01-02", d); err != nil {
-			errs = append(errs, fmt.Sprintf("extra_dates: %q must be yyyy-MM-dd", d))
-		}
-	}
+	errs = append(errs, dateErrors("skip_dates", f.SkipDates)...)
+	errs = append(errs, dateErrors("extra_dates", f.ExtraDates)...)
 	c.Tolerance = minutesOr(f.TickToleranceMinutes, defaultTolerance)
 	c.RetryWindow = minutesOr(f.RetryWindowMinutes, defaultRetryWindow)
 
@@ -129,13 +121,33 @@ func (f File) Build() (Config, error) {
 	return c, nil
 }
 
-func minutes(n int) time.Duration { return time.Duration(n) * time.Minute }
+// dateLayout is the yyyy-MM-dd form every date in the config file takes, the
+// same one the state file and the tick guard key their history by.
+const dateLayout = "2006-01-02"
 
+// dateErrors reports one message per malformed date, naming the field it came
+// from. Both date lists are validated rather than parsed into time.Time: the
+// guard compares them as strings, so the parse here is purely a check that a
+// typo'd date fails at startup instead of silently never matching.
+func dateErrors(field string, dates []string) []string {
+	var errs []string
+	for _, d := range dates {
+		if _, err := time.Parse(dateLayout, d); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %q must be yyyy-MM-dd", field, d))
+		}
+	}
+	return errs
+}
+
+// minutesOr reads a minute count from the file, falling back to the default
+// when it is absent or nonsensical. Zero and negative are treated the same:
+// neither is a meaningful duration for any knob here, and both are what an
+// unset YAML field decodes to.
 func minutesOr(n int, fallback time.Duration) time.Duration {
 	if n <= 0 {
 		return fallback
 	}
-	return minutes(n)
+	return time.Duration(n) * time.Minute
 }
 
 func orDefault(s, fallback string) string {

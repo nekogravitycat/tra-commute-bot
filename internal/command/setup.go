@@ -40,7 +40,7 @@ func (r *Router) handleSetupCallback(ctx context.Context, sess *Session, cq tele
 func (r *Router) confirmSetup(ctx context.Context, sess *Session) {
 	list := r.loadSettings(ctx)
 	if list.NameTaken(sess.Draft.Name, "") {
-		r.send(ctx, "「"+escName(sess.Draft.Name)+"」已經被使用了，請輸入 /setup 重新開始並換一個名字")
+		r.send(ctx, "「"+esc(sess.Draft.Name)+"」已經被使用了，請輸入 /setup 重新開始並換一個名字")
 		r.clearSession(sess.ChatID)
 		return
 	}
@@ -68,7 +68,7 @@ func (r *Router) handleAfterCallback(ctx context.Context, chatID int64, cq teleg
 		r.startSetup(ctx, chatID, time.Now())
 	case cbAfterList:
 		r.answer(ctx, cq.ID, "")
-		r.startManage(ctx, chatID, time.Now())
+		r.startManage(ctx, chatID)
 	case cbAfterDone:
 		r.answer(ctx, cq.ID, "")
 		r.send(ctx, "好，隨時輸入 /manage 可以再調整")

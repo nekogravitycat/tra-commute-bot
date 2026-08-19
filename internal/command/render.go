@@ -9,11 +9,13 @@ import (
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 )
 
-// escName escapes a user-chosen name (the one genuinely free-text field —
-// station names come from the trusted static catalog) before it goes into an
-// HTML parse_mode message, so a name containing "<" or "&" cannot break the
-// rendering of everything after it.
-func escName(s string) string { return html.EscapeString(s) }
+// esc escapes a value before it is interpolated into an HTML parse_mode
+// message, so a schedule name containing "<" or "&" cannot break the
+// rendering of everything after it. Station names come from the trusted static
+// catalog and contain no such character, but they go through the same helper
+// anyway: one rule for every interpolated value is easier to keep right than a
+// per-field judgement about which source is trustworthy.
+func esc(s string) string { return html.EscapeString(s) }
 
 // cardRule is the separator line framing card()'s body top and bottom.
 const cardRule = "──────────"
@@ -26,7 +28,7 @@ const cardRule = "──────────"
 func card(s domain.Settings) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n", cardRule)
-	fmt.Fprintf(&b, "%s → %s\n", html.EscapeString(s.OriginName), html.EscapeString(s.DestinationName))
+	fmt.Fprintf(&b, "%s → %s\n", esc(s.OriginName), esc(s.DestinationName))
 	fmt.Fprintf(&b, "通知：%s %s\n", weekdaysZh(s.ScheduleWeekdays), s.ScheduleAt)
 	fmt.Fprintf(&b, "最早到站 %s　最晚抵達 %s\n", s.ReadyAt, s.DeadlineAt)
 	fmt.Fprintf(&b, "提早出門上限 %d 分\n", int(s.MaxEarlyLeave/time.Minute))
@@ -62,11 +64,11 @@ func fieldLabel(f Field) string {
 func fieldValue(f Field, s domain.Settings) string {
 	switch f {
 	case FieldName:
-		return escName(s.Name)
+		return esc(s.Name)
 	case FieldOrigin:
-		return html.EscapeString(s.OriginName)
+		return esc(s.OriginName)
 	case FieldDestination:
-		return html.EscapeString(s.DestinationName)
+		return esc(s.DestinationName)
 	case FieldReadyAt:
 		return s.ReadyAt.String()
 	case FieldDeadlineAt:
@@ -102,19 +104,28 @@ func diffMessage(sess *Session) string {
 
 // listRow is one line of /status's per-schedule summary.
 func listRow(s domain.Settings, st domain.TickState, now time.Time) string {
-	status := "尚未有今天的紀錄"
-	if st.SucceededOn(s.Name, now) {
-		status = "今天已成功通知"
-	} else if a := st.AttemptOn(s.Name, now); a.Date != "" {
-		switch {
-		case a.GaveUp:
-			status = fmt.Sprintf("今天重試 %d 次後放棄", a.Count)
-		default:
-			status = fmt.Sprintf("今天已嘗試 %d 次，尚未成功", a.Count)
-		}
-	}
 	return fmt.Sprintf("%s：%s %s　%s→%s\n  %s",
-		escName(s.Name), weekdaysZh(s.ScheduleWeekdays), s.ScheduleAt, s.OriginName, s.DestinationName, status)
+		esc(s.Name), weekdaysZh(s.ScheduleWeekdays), s.ScheduleAt,
+		esc(s.OriginName), esc(s.DestinationName), todayStatus(s.Name, st, now))
+}
+
+// todayStatus says what the guard state records about one Schedule today.
+// "Nothing recorded" is its own answer rather than a silent blank: with the
+// notify loop running all day, a rule that is due and has no record at all is
+// a different situation from one that tried and failed.
+func todayStatus(name string, st domain.TickState, now time.Time) string {
+	if st.SucceededOn(name, now) {
+		return "今天已成功通知"
+	}
+	a := st.AttemptOn(name, now)
+	switch {
+	case a.Date == "":
+		return "尚未有今天的紀錄"
+	case a.GaveUp:
+		return fmt.Sprintf("今天重試 %d 次後放棄", a.Count)
+	default:
+		return fmt.Sprintf("今天已嘗試 %d 次，尚未成功", a.Count)
+	}
 }
 
 func statusMessage(list domain.SettingsList, state domain.TickState, now time.Time) string {

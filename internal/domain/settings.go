@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Settings is one Schedule (§10.1): the complete set of trip parameters the
 // user configures live over Telegram, via /setup and /manage, rather than by
@@ -86,12 +89,9 @@ func (l SettingsList) Find(name string) (Settings, bool) {
 // the Schedule's own current name as except lets a rename check against every
 // other name without tripping on itself.
 func (l SettingsList) NameTaken(name, except string) bool {
-	for _, s := range l.Schedules {
-		if s.Name == name && s.Name != except {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(l.Schedules, func(s Settings) bool {
+		return s.Name == name && s.Name != except
+	})
 }
 
 // Upsert returns a copy of the list with s replacing the Schedule of the same
@@ -99,9 +99,14 @@ func (l SettingsList) NameTaken(name, except string) bool {
 // path both /setup's "確認建立" and /manage's field edits go through, so a
 // Schedule is always replaced whole (§10.2 invariant 1) — never patched
 // field-by-field in place.
+//
+// Every method here returns a list that shares no backing array with the
+// receiver, so a caller can never discover which of them happens to copy.
 func (l SettingsList) Upsert(s Settings) SettingsList {
-	out := SettingsList{Schedules: make([]Settings, len(l.Schedules)), UsualTrainNos: l.UsualTrainNos}
-	copy(out.Schedules, l.Schedules)
+	out := SettingsList{
+		Schedules:     slices.Clone(l.Schedules),
+		UsualTrainNos: slices.Clone(l.UsualTrainNos),
+	}
 	for i, existing := range out.Schedules {
 		if existing.Name == s.Name {
 			out.Schedules[i] = s
@@ -114,45 +119,33 @@ func (l SettingsList) Upsert(s Settings) SettingsList {
 
 // Remove returns a copy of the list with the named Schedule deleted.
 func (l SettingsList) Remove(name string) SettingsList {
-	out := SettingsList{Schedules: make([]Settings, 0, len(l.Schedules)), UsualTrainNos: l.UsualTrainNos}
-	for _, s := range l.Schedules {
-		if s.Name != name {
-			out.Schedules = append(out.Schedules, s)
-		}
+	return SettingsList{
+		Schedules: slices.DeleteFunc(slices.Clone(l.Schedules), func(s Settings) bool {
+			return s.Name == name
+		}),
+		UsualTrainNos: slices.Clone(l.UsualTrainNos),
 	}
-	return out
 }
 
 // AddUsualTrain returns a copy of the list with no marked habitual. A train
 // already on the list is left alone rather than duplicated.
 func (l SettingsList) AddUsualTrain(no string) SettingsList {
-	for _, existing := range l.UsualTrainNos {
-		if existing == no {
-			return l
-		}
+	if slices.Contains(l.UsualTrainNos, no) {
+		return l
 	}
-	// Schedules is copied too, not just reassigned from l, so the returned
-	// list does not alias l's backing array — Upsert and Remove above both
-	// give the same guarantee, and a caller has no way to tell this method
-	// apart from those by which one happens to share memory.
-	out := SettingsList{
-		Schedules:     append([]Settings{}, l.Schedules...),
-		UsualTrainNos: append(append([]string{}, l.UsualTrainNos...), no),
+	return SettingsList{
+		Schedules:     slices.Clone(l.Schedules),
+		UsualTrainNos: append(slices.Clone(l.UsualTrainNos), no),
 	}
-	return out
 }
 
 // RemoveUsualTrain returns a copy of the list with no no longer marked
 // habitual. Removing a train not on the list is a no-op.
 func (l SettingsList) RemoveUsualTrain(no string) SettingsList {
-	out := SettingsList{
-		Schedules:     append([]Settings{}, l.Schedules...),
-		UsualTrainNos: make([]string, 0, len(l.UsualTrainNos)),
+	return SettingsList{
+		Schedules: slices.Clone(l.Schedules),
+		UsualTrainNos: slices.DeleteFunc(slices.Clone(l.UsualTrainNos), func(existing string) bool {
+			return existing == no
+		}),
 	}
-	for _, existing := range l.UsualTrainNos {
-		if existing != no {
-			out.UsualTrainNos = append(out.UsualTrainNos, existing)
-		}
-	}
-	return out
 }

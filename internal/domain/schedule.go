@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -91,21 +92,11 @@ type Schedule struct {
 	At       TimeOfDay
 }
 
-// Matches reports whether the schedule applies on the given day.
+// Matches reports whether the schedule applies on the given day. An explicit
+// date wins over the weekday set, which is how a make-up workday fires on a
+// day the weekdays alone would not cover.
 func (s Schedule) Matches(day time.Time) bool {
-	key := DateKeyOf(day)
-	for _, d := range s.Dates {
-		if d == key {
-			return true
-		}
-	}
-	wd := day.Weekday()
-	for _, w := range s.Weekdays {
-		if w == wd {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.Dates, DateKeyOf(day)) || slices.Contains(s.Weekdays, day.Weekday())
 }
 
 // Scheduling is the whole §10.3 rule set.
@@ -122,13 +113,7 @@ type Scheduling struct {
 
 // Skipped reports whether the given day is on the skip list.
 func (s Scheduling) Skipped(day time.Time) bool {
-	key := DateKeyOf(day)
-	for _, d := range s.SkipDates {
-		if d == key {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.SkipDates, DateKeyOf(day))
 }
 
 // Attempt records what happened to one schedule on one day.

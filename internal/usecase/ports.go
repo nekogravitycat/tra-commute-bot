@@ -57,20 +57,22 @@ type Notifier interface {
 	Send(ctx context.Context, m Message) error
 }
 
-// StateStore persists the tick guard state across the 1440 daily processes.
-type StateStore interface {
-	Load() (domain.TickState, error)
-	Save(domain.TickState) error
+// Store persists one whole document, read and written as a single value.
+// Both of this program's on-disk documents have this shape, which is what lets
+// a single Actor (§10.9) serialize access to either of them.
+type Store[T any] interface {
+	Load() (T, error)
+	Save(T) error
 }
+
+// StateStore persists the tick guard state across the 1440 daily processes.
+type StateStore = Store[domain.TickState]
 
 // SettingsStore persists every Schedule (§10.1) the user has set up over
 // Telegram. It is read fresh at the top of every tick and written by the
 // Telegram command handler (through the settings actor, §10.9), so a change
 // takes effect on the very next wake-up with no restart.
-type SettingsStore interface {
-	Load() (domain.SettingsList, error)
-	Save(domain.SettingsList) error
-}
+type SettingsStore = Store[domain.SettingsList]
 
 // Archiver keeps the raw API responses. When a recommendation turns out to
 // have been wrong, this archive is the only way to find out why.

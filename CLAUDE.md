@@ -47,7 +47,8 @@ internal/
     ports.go             interfaces the orchestration depends on
     brief.go             fetch → plan → render → deliver
     tick.go              guard every Schedule, run the due ones, record
-    settingsactor.go      single-goroutine serialized access to settings.json (§10.9)
+    actor.go             single-goroutine serialized access to a JSON document
+                         — settings.json and state.json each get one (§10.9)
   adapter/
     tdx/                 TDX v3 client: auth, throttle, 429 backoff, parsing
     telegram/            Bot API: sendMessage, getUpdates, inline keyboards
@@ -57,6 +58,7 @@ internal/
     archive/             raw API responses, pruned after 30 days
   command/                /setup, /manage, /status, /help, /cancel (§10)
   platform/clock/        real and fixed clocks
+  platform/atomicfile/   write-temp-then-rename, shared by every file we own
 ```
 
 Three properties are load-bearing — preserve them in any change:
@@ -80,13 +82,13 @@ knobs into `settings.json`.
 **One long-running process, two independent loops.** A notify loop wakes every
 minute and decides, per Schedule, whether this is its moment; a command loop
 long-polls Telegram for `/setup`, `/manage` and the rest, the whole time the
-process is up. Both touch `settings.json`, so a single actor goroutine
-serializes every read and write to it (`internal/usecase/settingsactor.go`) —
-the rest of the program never talks to the settings store directly. GitHub
-Actions' own `schedule:` trigger is not used to drive any of this: its 5-20
-minute jitter is incompatible with a system whose whole value is minute-scale
-timing. Never add code that bypasses `settingsactor` to read or write
-`settings.json` directly.
+process is up. Both touch `settings.json` and `state.json`, so each file gets
+a single actor goroutine that serializes every read and write to it
+(`internal/usecase/actor.go`) — the rest of the program never talks to either
+store directly. GitHub Actions' own `schedule:` trigger is not used to drive
+any of this: its 5-20 minute jitter is incompatible with a system whose whole
+value is minute-scale timing. Never add code that bypasses an actor to read or
+write `settings.json` or `state.json` directly.
 
 ## Tests
 

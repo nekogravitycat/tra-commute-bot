@@ -62,7 +62,7 @@ func (r *Router) advance(ctx context.Context, sess *Session) {
 // straight away (§10.6).
 func (r *Router) finishFlow(ctx context.Context, sess *Session) {
 	if sess.Editing == "" {
-		r.send(ctx, fmt.Sprintf("✅ 設定完成：%s\n%s", escName(sess.Draft.Name), card(sess.Draft)))
+		r.send(ctx, fmt.Sprintf("✅ 設定完成：%s\n%s", esc(sess.Draft.Name), card(sess.Draft)))
 		r.sendKeyboard(ctx, "確認要建立這條規則嗎？", setupConfirmKeyboard())
 		return
 	}
@@ -101,7 +101,7 @@ func (r *Router) handleNameText(ctx context.Context, sess *Session, text string)
 	}
 	list := r.loadSettings(ctx)
 	if list.NameTaken(name, sess.Editing) {
-		r.send(ctx, fmt.Sprintf("「%s」已經是另一條規則的名字了，換一個？", escName(name)))
+		r.send(ctx, fmt.Sprintf("「%s」已經是另一條規則的名字了，換一個？", esc(name)))
 		return
 	}
 	sess.Draft.Name = name

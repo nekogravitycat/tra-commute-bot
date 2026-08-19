@@ -86,7 +86,7 @@ func TestActorStoreImplementsSettingsStore(t *testing.T) {
 	defer cancel()
 	go actor.Run(ctx)
 
-	as := ActorStore{Actor: actor, Ctx: ctx}
+	as := ActorStore[domain.SettingsList]{Actor: actor, Ctx: ctx}
 	if err := as.Save(domain.SettingsList{Schedules: []domain.Settings{{Name: "上班通勤"}}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}

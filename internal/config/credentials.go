@@ -67,6 +67,24 @@ func (c Credentials) TelegramConfigured() bool {
 	return c.TelegramToken != "" && c.TelegramChatID != ""
 }
 
+// String masks the secret fields so a stray %v/%+v on a Credentials value —
+// in a log line or a panic message — cannot leak the TDX client secret or the
+// bot token. TelegramChatID is not a secret (Telegram treats it as a plain
+// numeric identifier) and is left visible, which is useful on its own for
+// telling one deployment's logs from another's.
+func (c Credentials) String() string {
+	return fmt.Sprintf("Credentials{TDXClientID:%q, TDXClientSecret:%s, TelegramToken:%s, TelegramChatID:%q}",
+		c.TDXClientID, mask(c.TDXClientSecret), mask(c.TelegramToken), c.TelegramChatID)
+}
+
+// mask reports only whether a secret is set, never any part of its value.
+func mask(secret string) string {
+	if secret == "" {
+		return "<empty>"
+	}
+	return "<redacted>"
+}
+
 // LoadDotEnv reads a KEY=VALUE file into the environment without overwriting
 // variables that are already set.
 //

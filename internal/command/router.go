@@ -29,15 +29,30 @@ type Router struct {
 	// must not be able to see or change anyone's commute settings.
 	ChatID string
 
+	// chatID is ChatID parsed once at construction, rather than formatting
+	// every incoming update's int64 chat ID back to a string to compare —
+	// isOurChat runs on every single message and callback the process ever
+	// receives.
+	chatID int64
+
 	mu       sync.Mutex
 	sessions map[int64]*Session
 }
 
 // NewRouter builds a Router. Bot, Actor, State, Stations and ChatID must all
-// be set.
+// be set. chatID must parse as an int64 — the composition root gets it from
+// config.Credentials.TelegramChatID, which config.LoadCredentials reads
+// straight from the environment with no validation of its own, so a typo'd
+// TELEGRAM_CHAT_ID surfaces here instead of as a router that silently
+// answers no chat at all.
 func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state usecase.StateStore, stations []domain.Station, chatID string, log *slog.Logger) *Router {
+	id, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		log.Error("TELEGRAM_CHAT_ID is not a valid chat ID, the bot will answer no chat", "value", chatID, "err", err)
+	}
 	return &Router{
 		Bot: bot, Actor: actor, State: state, Stations: stations, ChatID: chatID, Log: log,
+		chatID:   id,
 		sessions: map[int64]*Session{},
 	}
 }
@@ -71,7 +86,7 @@ func (r *Router) HandleUpdate(ctx context.Context, u telegram.Update) {
 }
 
 func (r *Router) isOurChat(id int64) bool {
-	return strconv.FormatInt(id, 10) == r.ChatID
+	return id == r.chatID
 }
 
 func (r *Router) session(chatID int64) *Session {

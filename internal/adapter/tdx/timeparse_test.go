@@ -78,15 +78,23 @@ func TestParseDate(t *testing.T) {
 // carries a real RFC3339 timestamp with a zone, unlike the naive timetable
 // clocks.
 func TestParseTimestamp(t *testing.T) {
-	got := parseTimestamp("2026-08-18T14:26:40+08:00", testLoc)
+	got, err := parseTimestamp("2026-08-18T14:26:40+08:00", testLoc)
+	if err != nil {
+		t.Fatalf("parseTimestamp: %v", err)
+	}
 	want := time.Date(2026, 8, 18, 14, 26, 40, 0, testLoc)
 	if !got.Equal(want) {
 		t.Errorf("got %s, want %s", got, want)
 	}
 
-	// An unparsable timestamp yields the zero value, which the renderer skips.
-	// It is metadata, not a reason to abandon an otherwise good brief.
-	if got := parseTimestamp("garbage", testLoc); !got.IsZero() {
+	// An unparsable timestamp yields the zero value and an error — the
+	// caller logs the error and treats the zero value as "unknown" metadata,
+	// not a reason to abandon an otherwise good brief.
+	got, err = parseTimestamp("garbage", testLoc)
+	if err == nil {
+		t.Error("expected an error for an unparsable timestamp")
+	}
+	if !got.IsZero() {
 		t.Errorf("got %s, want the zero time", got)
 	}
 }

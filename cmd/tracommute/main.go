@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -126,7 +127,7 @@ func run() error {
 		if o.force {
 			return app.forceRun(ctx, now, o, log)
 		}
-		res, err := app.tick(now, app.settingsStore, o, log).Run(ctx)
+		res, err := app.tick(now, app.settingsStore, app.state, o, log).Run(ctx)
 		if err != nil {
 			return err
 		}
@@ -140,7 +141,8 @@ func run() error {
 // application holds the wired dependencies.
 type application struct {
 	brief         *usecase.Brief
-	state         usecase.StateStore
+	state         usecase.StateStore // the raw file-backed store
+	stateActor    *usecase.StateActor
 	settingsStore usecase.SettingsStore // the raw file-backed store
 	settingsActor *usecase.SettingsActor
 	router        *command.Router // nil when Telegram is not configured (never true outside -dry-run)
@@ -234,15 +236,19 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 	settingsStore := settingsfile.New(cfg.SettingsPath)
 	stateStore := statefile.New(cfg.StatePath)
 	actor := usecase.NewSettingsActor(settingsStore, log)
+	stateActor := usecase.NewStateActor(stateStore, log)
 
 	var router *command.Router
 	if bot != nil {
+		// State is swapped for the actor-backed store once serve() has ctx
+		// and the actor's Run goroutine to swap it for — see serve().
 		router = command.NewRouter(bot, actor, stateStore, domain.AllStations, cfg.Credentials.TelegramChatID, log)
 	}
 
 	return &application{
 		brief:         brief,
 		state:         stateStore,
+		stateActor:    stateActor,
 		settingsStore: settingsStore,
 		settingsActor: actor,
 		router:        router,
@@ -276,10 +282,10 @@ func buildBot(o options, cfg config.Config) (*telegram.Notifier, error) {
 	}), nil
 }
 
-func (a *application) tick(now time.Time, settings usecase.SettingsStore, o options, log *slog.Logger) *usecase.Tick {
+func (a *application) tick(now time.Time, settings usecase.SettingsStore, state usecase.StateStore, o options, log *slog.Logger) *usecase.Tick {
 	return &usecase.Tick{
 		Clock:       clock.Fixed{At: now},
-		State:       a.state,
+		State:       state,
 		Settings:    settings,
 		Brief:       a.brief,
 		Log:         log,
@@ -327,8 +333,8 @@ func (a *application) prune(log *slog.Logger) {
 }
 
 // serve runs the long-running process (§4.2, §5): the notify loop and the
-// command loop, side by side, sharing settings.json through the single
-// settings actor goroutine (§10.9), until SIGTERM or SIGINT asks for a
+// command loop, side by side, sharing settings.json and state.json through
+// their single actor goroutines (§10.9), until SIGTERM or SIGINT asks for a
 // graceful shutdown.
 func (a *application) serve(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -342,15 +348,29 @@ func (a *application) serve(log *slog.Logger) error {
 		a.settingsActor.Run(ctx)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.stateActor.Run(ctx)
+	}()
+
 	settings := usecase.ActorStore{Actor: a.settingsActor, Ctx: ctx}
+	state := usecase.StateActorStore{Actor: a.stateActor, Ctx: ctx}
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		a.runNotifyLoop(ctx, settings, log)
+		a.runNotifyLoop(ctx, settings, state, log)
 	}()
 
 	if a.router != nil {
+		// The command loop shares state.json with the notify loop above, so
+		// its reads and writes (clearScheduleState on /manage delete, the
+		// /status and delete-confirm reads) must go through the same actor —
+		// not the raw store the Router was built with in build(), before ctx
+		// (and the actor goroutine that needs it) existed.
+		a.router.State = state
+
 		if err := a.router.SetMyCommands(ctx); err != nil {
 			log.Warn("setMyCommands failed", "err", err)
 		}
@@ -373,8 +393,8 @@ func (a *application) serve(log *slog.Logger) error {
 // a container restarted mid-tolerance-window does not have to wait a full
 // minute for its first chance to catch up), then one every minute
 // thereafter, until ctx is cancelled.
-func (a *application) runNotifyLoop(ctx context.Context, settings usecase.SettingsStore, log *slog.Logger) {
-	a.runTick(ctx, settings, log)
+func (a *application) runNotifyLoop(ctx context.Context, settings usecase.SettingsStore, state usecase.StateStore, log *slog.Logger) {
+	a.runTick(ctx, settings, state, log)
 
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -383,17 +403,17 @@ func (a *application) runNotifyLoop(ctx context.Context, settings usecase.Settin
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.runTick(ctx, settings, log)
+			a.runTick(ctx, settings, state, log)
 		}
 	}
 }
 
-func (a *application) runTick(ctx context.Context, settings usecase.SettingsStore, log *slog.Logger) {
+func (a *application) runTick(ctx context.Context, settings usecase.SettingsStore, state usecase.StateStore, log *slog.Logger) {
 	tickCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 
 	now := clock.Real{Loc: a.loc}.Now()
-	t := a.tick(now, settings, options{}, log)
+	t := a.tick(now, settings, state, options{}, log)
 	res, err := t.Run(tickCtx)
 	if err != nil {
 		log.Error("tick run failed", "err", err)
@@ -435,9 +455,25 @@ func (a *application) runCommandLoop(ctx context.Context, log *slog.Logger) {
 			if u.UpdateID >= offset {
 				offset = u.UpdateID + 1
 			}
-			a.router.HandleUpdate(ctx, u)
+			a.handleUpdateSafely(ctx, log, u)
 		}
 	}
+}
+
+// handleUpdateSafely runs the router against one update, recovering from a
+// panic in any handler. Without this, a single bad update would take down
+// the whole goroutine this loop runs in — the bot would stop answering
+// /setup, /manage and the rest for the remaining lifetime of the process,
+// with nothing in the logs pointing at why and no Telegram message ever
+// telling the user their command interface is dead. See CLAUDE.md's
+// "nothing fails silently."
+func (a *application) handleUpdateSafely(ctx context.Context, log *slog.Logger, u telegram.Update) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("panic handling update", "update_id", u.UpdateID, "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	a.router.HandleUpdate(ctx, u)
 }
 
 func report(res usecase.TickResult, o options, log *slog.Logger) {
@@ -474,18 +510,13 @@ func recommendedNo(b domain.Brief) string {
 // it to disk would add a file and its permissions to save very little.
 type authOnDemand struct {
 	client *tdx.Client
-	done   bool
+	once   sync.Once
+	err    error
 }
 
 func (a *authOnDemand) ensure(ctx context.Context) error {
-	if a.done {
-		return nil
-	}
-	if err := a.client.Authenticate(ctx); err != nil {
-		return err
-	}
-	a.done = true
-	return nil
+	a.once.Do(func() { a.err = a.client.Authenticate(ctx) })
+	return a.err
 }
 
 func (a *authOnDemand) DailyODTimetable(ctx context.Context, originID, destID string, date time.Time) (usecase.Timetable, error) {

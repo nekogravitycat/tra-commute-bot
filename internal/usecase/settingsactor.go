@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
@@ -12,9 +13,19 @@ import (
 // caller.
 type SettingsOp func(domain.SettingsList) (domain.SettingsList, any)
 
+// settingsOutcome is what one request's round trip through the actor
+// produced: either a result or the reason it could not be produced. Load and
+// Save failures must reach the caller as an error rather than a nil-error
+// result — a silently-empty result reads as "the op ran and returned
+// nothing," not "your edit never touched disk."
+type settingsOutcome struct {
+	value any
+	err   error
+}
+
 type settingsRequest struct {
 	op     SettingsOp
-	result chan any
+	result chan settingsOutcome
 }
 
 // SettingsActor is the single goroutine allowed to call
@@ -52,23 +63,28 @@ func (a *SettingsActor) Run(ctx context.Context) {
 		case req := <-a.requests:
 			current, err := a.store.Load()
 			if err != nil {
-				// Mirrors Tick's tolerance for an unreadable settings file:
-				// starting from an empty list risks losing an in-flight edit,
-				// which is still better than the command loop hanging forever
-				// on a corrupt file.
-				a.log.Warn("settings unreadable, continuing with empty settings", "err", err)
-				current = domain.SettingsList{}
+				// A request built on an unreadable file must not be allowed
+				// to proceed: req.op ran against domain.SettingsList{} would
+				// then get Saved over whatever is actually on disk, deleting
+				// every existing Schedule. Rejecting the request instead
+				// costs this one caller an error; starting from empty and
+				// writing it back could cost every Schedule that exists.
+				a.log.Error("settings load failed, rejecting request", "err", err)
+				req.result <- settingsOutcome{err: fmt.Errorf("load settings: %w", err)}
+				continue
 			}
 			updated, result := req.op(current)
 			if err := a.store.Save(updated); err != nil {
-				// A failed save must not block the caller forever, nor should
-				// it silently discard their edit from the response — the op's
-				// result still reflects what the caller asked for, even
-				// though it did not make it to disk. The next successful
-				// write will include it.
+				// A failed save must reach the caller as an error — the op's
+				// result reflects what the caller asked for, but it did not
+				// make it to disk, and the actor always reloads from disk on
+				// the next request, so a silent "success" here would be a
+				// permanently lost edit, not a deferred one.
 				a.log.Error("settings save failed", "err", err)
+				req.result <- settingsOutcome{err: fmt.Errorf("save settings: %w", err)}
+				continue
 			}
-			req.result <- result
+			req.result <- settingsOutcome{value: result}
 		}
 	}
 }
@@ -77,7 +93,7 @@ func (a *SettingsActor) Run(ctx context.Context) {
 // cancelled. Safe to call from any goroutine at any time — including from
 // inside a long poll elsewhere, since the actor only ever blocks on file I/O.
 func (a *SettingsActor) Do(ctx context.Context, op SettingsOp) (any, error) {
-	req := settingsRequest{op: op, result: make(chan any, 1)}
+	req := settingsRequest{op: op, result: make(chan settingsOutcome, 1)}
 	select {
 	case a.requests <- req:
 	case <-ctx.Done():
@@ -85,7 +101,7 @@ func (a *SettingsActor) Do(ctx context.Context, op SettingsOp) (any, error) {
 	}
 	select {
 	case res := <-req.result:
-		return res, nil
+		return res.value, res.err
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

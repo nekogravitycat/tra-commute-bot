@@ -29,6 +29,11 @@ type PlanInput struct {
 }
 
 // Plan is the ranked outcome of §7.5.
+// Plan is built once by BuildPlan and then treated as immutable — Recommended
+// and BestRisky point into Candidates' backing array rather than holding
+// copies, which only stays safe because nothing appends to Candidates after
+// BuildPlan returns. Do not mutate a Plan's Candidates in place after it is
+// built.
 type Plan struct {
 	// Candidates is every surviving train, ranked best first.
 	Candidates []Candidate

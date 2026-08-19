@@ -43,10 +43,10 @@ func parseDate(s string, loc *time.Location) (time.Time, error) {
 // parseTimestamp reads the RFC3339 timestamps that the live board carries.
 // These do include a zone, unlike the timetable's naive clocks; mixing the two
 // up is the single easiest mistake to make against this API.
-func parseTimestamp(s string, loc *time.Location) time.Time {
+func parseTimestamp(s string, loc *time.Location) (time.Time, error) {
 	t, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return time.Time{}
+		return time.Time{}, fmt.Errorf("unrecognised timestamp %q, want RFC3339: %w", s, err)
 	}
-	return t.In(loc)
+	return t.In(loc), nil
 }

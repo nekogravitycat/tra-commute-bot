@@ -75,8 +75,10 @@ func (n *Notifier) GetUpdates(ctx context.Context, offset, timeoutSeconds int) (
 		return nil, fmt.Errorf("telegram: encode getUpdates: %w", err)
 	}
 
-	client := &http.Client{Timeout: time.Duration(timeoutSeconds+10) * time.Second}
-	body, err := n.callWithClient(ctx, client, "getUpdates", payload)
+	n.pollOnce.Do(func() {
+		n.pollHTTP = &http.Client{Timeout: time.Duration(timeoutSeconds+10) * time.Second}
+	})
+	body, err := n.callWithClient(ctx, n.pollHTTP, "getUpdates", payload)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +233,7 @@ func (n *Notifier) callWithClient(ctx context.Context, client *http.Client, meth
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("telegram: %s: read response: %w", method, err)
 	}

@@ -24,6 +24,11 @@ const DefaultAuthURL = "https://tdx.transportdata.tw/auth/realms/TDXConnect/prot
 // it exists for the day TDX tightens the limit, not for normal operation.
 var backoffSchedule = []time.Duration{5 * time.Second, 10 * time.Second, 15 * time.Second}
 
+// maxResponseBytes caps how much of a TDX response body is ever read, so a
+// misbehaving proxy between here and TDX cannot exhaust memory by streaming
+// an unbounded body. No real response comes close to this.
+const maxResponseBytes = 10 << 20 // 10 MiB
+
 // Credentials are the TDX client credentials, supplied via the environment.
 type Credentials struct {
 	ClientID     string
@@ -144,9 +149,13 @@ func (c *Client) do(ctx context.Context, name, method, endpoint string, form url
 			wait := backoffSchedule[attempt-1]
 			c.opts.Log.Warn("tdx rate limited, backing off",
 				"request", name, "attempt", attempt, "wait", wait)
-			c.opts.Sleep(wait)
+			if err := c.sleep(ctx, wait); err != nil {
+				return nil, err
+			}
 		}
-		c.throttle()
+		if err := c.throttle(ctx); err != nil {
+			return nil, err
+		}
 
 		body, status, err := c.roundTrip(ctx, method, endpoint, form)
 		if err != nil {
@@ -186,7 +195,7 @@ func (c *Client) roundTrip(ctx context.Context, method, endpoint string, form ur
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
@@ -194,13 +203,31 @@ func (c *Client) roundTrip(ctx context.Context, method, endpoint string, form ur
 }
 
 // throttle enforces the minimum gap since the previous request.
-func (c *Client) throttle() {
+func (c *Client) throttle(ctx context.Context) error {
 	defer func() { c.lastReqAt = time.Now() }()
 	if c.lastReqAt.IsZero() || c.opts.Interval <= 0 {
-		return
+		return nil
 	}
 	if wait := c.opts.Interval - time.Since(c.lastReqAt); wait > 0 {
-		c.opts.Sleep(wait)
+		return c.sleep(ctx, wait)
+	}
+	return nil
+}
+
+// sleep waits out d on c.opts.Sleep (real time.Sleep in production, a fake in
+// tests), but gives up as soon as ctx is cancelled rather than only noticing
+// once the wait — up to backoffSchedule's 15 seconds — has run its course.
+func (c *Client) sleep(ctx context.Context, d time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		c.opts.Sleep(d)
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 

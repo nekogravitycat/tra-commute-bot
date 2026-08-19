@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,26 @@ func TestTelegramOptional(t *testing.T) {
 	c, _ = LoadCredentials()
 	if c.TelegramConfigured() {
 		t.Error("a token without a chat ID cannot deliver anything")
+	}
+}
+
+// TestCredentialsStringMasksSecrets is M-11: a Credentials value printed with
+// %v or %+v — in a log line, or in a panic message — must not leak the TDX
+// client secret or the bot token.
+func TestCredentialsStringMasksSecrets(t *testing.T) {
+	c := Credentials{
+		TDXClientID:     "public-id",
+		TDXClientSecret: "super-secret",
+		TelegramToken:   "bot-token-123",
+		TelegramChatID:  "123456",
+	}
+	for _, got := range []string{fmt.Sprintf("%v", c), fmt.Sprintf("%+v", c), c.String()} {
+		if strings.Contains(got, "super-secret") || strings.Contains(got, "bot-token-123") {
+			t.Errorf("%q leaks a secret value", got)
+		}
+		if !strings.Contains(got, "public-id") || !strings.Contains(got, "123456") {
+			t.Errorf("%q should still show the non-secret fields", got)
+		}
 	}
 }
 

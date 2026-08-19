@@ -249,7 +249,15 @@ func (r *Router) handleFieldCallback(ctx context.Context, sess *Session, cq tele
 			if sess.PickerSelected == nil {
 				sess.PickerSelected = map[time.Weekday]bool{}
 			}
-			sess.PickerSelected[wd] = !sess.PickerSelected[wd]
+			// Deleting rather than storing false keeps len(PickerSelected)
+			// meaningful as "how many days are selected" — the done button's
+			// "at least one day" check below reads that length directly, and
+			// weekdaySetToSlice only wants the true entries anyway.
+			if sess.PickerSelected[wd] {
+				delete(sess.PickerSelected, wd)
+			} else {
+				sess.PickerSelected[wd] = true
+			}
 			r.answer(ctx, cq.ID, "")
 			if err := r.Bot.EditMessageReplyMarkup(ctx, sess.PickerMessageID, weekdayKeyboard(sess.PickerSelected)); err != nil {
 				r.Log.Warn("update weekday keyboard failed", "err", err)

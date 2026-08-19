@@ -2,6 +2,7 @@ package tdx
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -309,6 +310,48 @@ func TestRateLimitBackoff(t *testing.T) {
 		if slept[i] != want[i] {
 			t.Errorf("wait %d = %v, want %v", i, slept[i], want[i])
 		}
+	}
+}
+
+// TestBackoffRespectsContextCancellation is M-6: a backoff wait must notice
+// ctx being cancelled rather than sitting out the full wait — up to 15
+// seconds on the last step of backoffSchedule — before ever checking.
+func TestBackoffRespectsContextCancellation(t *testing.T) {
+	var calls atomic.Int32
+	release := make(chan struct{})
+
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+	}), nil)
+	c.token = "tok"
+	// Sleep blocks until the test releases it, standing in for a real,
+	// uninterruptible time.Sleep — the fix under test is that ctx
+	// cancellation is noticed without waiting for this to return.
+	c.opts.Sleep = func(time.Duration) { <-release }
+	defer close(release)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.LiveDelays(ctx)
+		done <- err
+	}()
+
+	// Give the first request (which always runs before any backoff) time to
+	// land, then cancel while the client is blocked in its post-429 sleep.
+	for calls.Load() < 1 {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil || !errors.Is(err, context.Canceled) {
+			t.Errorf("LiveDelays error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("LiveDelays did not return promptly after ctx was cancelled — backoff is not context-aware")
 	}
 }
 

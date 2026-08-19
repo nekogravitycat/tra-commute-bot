@@ -172,6 +172,13 @@ func (b *Brief) deliver(ctx context.Context, br domain.Brief) (Result, error) {
 	return res, nil
 }
 
+// maxSendBackoff caps the doubling wait between delivery retries. Delivery
+// is time-sensitive — the whole point is a message before the train the
+// message is about — so an admin who raises SendRetries for a flakier
+// network must not accidentally also sign up for a wait that grows past any
+// sensible cutoff for how late a warning can still be useful.
+const maxSendBackoff = 30 * time.Second
+
 func (b *Brief) send(ctx context.Context, m Message) error {
 	sleep := b.Sleep
 	if sleep == nil {
@@ -187,6 +194,9 @@ func (b *Brief) send(ctx context.Context, m Message) error {
 		if attempt > 0 {
 			sleep(backoff)
 			backoff *= 2
+			if backoff > maxSendBackoff {
+				backoff = maxSendBackoff
+			}
 		}
 		if err := b.Notifier.Send(ctx, m); err != nil {
 			errs = append(errs, err)

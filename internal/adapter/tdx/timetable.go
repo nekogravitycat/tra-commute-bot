@@ -35,9 +35,16 @@ func (c *Client) DailyODTimetable(ctx context.Context, originID, destID string, 
 		serviceDate = date
 	}
 
+	updatedAt, err := parseTimestamp(resp.UpdateTime, c.loc)
+	if err != nil {
+		// Metadata, not a reason to abandon an otherwise good timetable — the
+		// renderer treats a zero UpdatedAt as "unknown" and omits it.
+		c.opts.Log.Warn("unparsable UpdateTime, leaving it unset", "value", resp.UpdateTime, "err", err)
+	}
+
 	out := usecase.Timetable{
 		ServiceDate: serviceDate,
-		UpdatedAt:   parseTimestamp(resp.UpdateTime, c.loc),
+		UpdatedAt:   updatedAt,
 		Services:    make([]domain.Service, 0, len(resp.TrainTimetables)),
 	}
 	for _, tt := range resp.TrainTimetables {

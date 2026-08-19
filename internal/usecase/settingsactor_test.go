@@ -99,6 +99,51 @@ func TestActorStoreImplementsSettingsStore(t *testing.T) {
 	}
 }
 
+// TestSettingsActorRejectsWriteOnUnreadableFile is H-5: if settings.json
+// cannot be read, the op must not be allowed to run against an empty base and
+// get written back — that would erase every Schedule that actually exists on
+// disk in exchange for the one the caller was trying to add.
+func TestSettingsActorRejectsWriteOnUnreadableFile(t *testing.T) {
+	store := &fakeSettings{
+		settings: &domain.SettingsList{Schedules: []domain.Settings{{Name: "existing"}}},
+		loadErr:  errBoom,
+	}
+	actor := NewSettingsActor(store, quietLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go actor.Run(ctx)
+
+	_, err := actor.Do(ctx, func(cur domain.SettingsList) (domain.SettingsList, any) {
+		return cur.Upsert(domain.Settings{Name: "new"}), nil
+	})
+	if err == nil {
+		t.Fatal("expected Do to report the load failure rather than silently proceeding")
+	}
+	if store.saves != 0 {
+		t.Errorf("got %d saves, want 0 — a request built on an unreadable file must never be written back", store.saves)
+	}
+}
+
+// TestSettingsActorReportsSaveFailure is H-4: a failed Save must reach the
+// caller as an error. The old behaviour returned the op's result regardless,
+// so the caller believed an edit had reached disk when it never did.
+func TestSettingsActorReportsSaveFailure(t *testing.T) {
+	store := &fakeSettings{settings: &domain.SettingsList{}, saveErr: errBoom}
+	actor := NewSettingsActor(store, quietLogger())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go actor.Run(ctx)
+
+	_, err := actor.Do(ctx, func(cur domain.SettingsList) (domain.SettingsList, any) {
+		return cur.Upsert(domain.Settings{Name: "new"}), nil
+	})
+	if err == nil {
+		t.Fatal("expected Do to report the save failure rather than silently succeeding")
+	}
+}
+
 // TestSettingsActorDoRespectsCancellation checks a caller is not left
 // blocked forever if the actor has already stopped — the failure mode a
 // stray direct SettingsStore access would otherwise hide until deployment.

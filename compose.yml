@@ -14,6 +14,14 @@ services:
     volumes:
       - ./configs/config.yaml:/etc/tra-commute/config.yaml:ro
       - tra-commute-data:/var/lib/tra-commute
+    logging:
+      # The default json-file driver has no size limit of its own — a
+      # process that runs all day, every day, would otherwise grow its log
+      # file without bound.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   tra-commute-data:

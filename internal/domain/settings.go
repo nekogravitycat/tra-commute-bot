@@ -131,16 +131,24 @@ func (l SettingsList) AddUsualTrain(no string) SettingsList {
 			return l
 		}
 	}
-	out := l
-	out.UsualTrainNos = append(append([]string{}, l.UsualTrainNos...), no)
+	// Schedules is copied too, not just reassigned from l, so the returned
+	// list does not alias l's backing array — Upsert and Remove above both
+	// give the same guarantee, and a caller has no way to tell this method
+	// apart from those by which one happens to share memory.
+	out := SettingsList{
+		Schedules:     append([]Settings{}, l.Schedules...),
+		UsualTrainNos: append(append([]string{}, l.UsualTrainNos...), no),
+	}
 	return out
 }
 
 // RemoveUsualTrain returns a copy of the list with no no longer marked
 // habitual. Removing a train not on the list is a no-op.
 func (l SettingsList) RemoveUsualTrain(no string) SettingsList {
-	out := l
-	out.UsualTrainNos = make([]string, 0, len(l.UsualTrainNos))
+	out := SettingsList{
+		Schedules:     append([]Settings{}, l.Schedules...),
+		UsualTrainNos: make([]string, 0, len(l.UsualTrainNos)),
+	}
 	for _, existing := range l.UsualTrainNos {
 		if existing != no {
 			out.UsualTrainNos = append(out.UsualTrainNos, existing)

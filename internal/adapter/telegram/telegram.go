@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/usecase"
@@ -15,6 +16,12 @@ import (
 
 // DefaultAPIBase is the Bot API root.
 const DefaultAPIBase = "https://api.telegram.org"
+
+// maxResponseBytes caps how much of a Bot API response body is ever read. No
+// real response comes close to this; it exists so a misbehaving proxy
+// between here and Telegram cannot exhaust memory by streaming an unbounded
+// body.
+const maxResponseBytes = 10 << 20 // 10 MiB
 
 // Config holds the bot credentials and endpoint.
 type Config struct {
@@ -29,6 +36,14 @@ type Config struct {
 type Notifier struct {
 	cfg  Config
 	http *http.Client
+
+	// pollHTTP is GetUpdates' client, built once on first use rather than
+	// per call: a fresh *http.Client means a fresh connection pool, and the
+	// command loop calls GetUpdates in a tight cycle for the life of the
+	// process, so reusing one client lets keep-alive actually apply instead
+	// of paying a new TCP+TLS handshake every ~40 seconds.
+	pollOnce sync.Once
+	pollHTTP *http.Client
 }
 
 // New builds a notifier.
@@ -86,7 +101,7 @@ func (n *Notifier) Send(ctx context.Context, m usecase.Message) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	var out sendMessageResponse
 	// A body that will not decode is still a failure worth reporting with its
 	// status code, so the decode error itself is not the interesting one.

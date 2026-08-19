@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"text/template"
@@ -77,13 +78,18 @@ func run() error {
 		return stations[i].ID < stations[j].ID
 	})
 
-	f, err := os.Create(outPath)
+	// Rendered to a temp file first and renamed into place only on success —
+	// os.Create(outPath) directly would truncate the existing, working
+	// stations_data.go before tmpl.Execute even runs, so a rendering failure
+	// would destroy the last good catalog instead of just failing to update it.
+	tmp, err := os.CreateTemp(filepath.Dir(outPath), ".stations-*.go")
 	if err != nil {
-		return fmt.Errorf("create %s: %w", outPath, err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
 
-	if err := tmpl.Execute(f, struct {
+	if err := tmpl.Execute(tmp, struct {
 		GeneratedAt string
 		Count       int
 		Stations    []domain.Station
@@ -92,7 +98,14 @@ func run() error {
 		Count:       len(stations),
 		Stations:    stations,
 	}); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("render %s: %w", outPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, outPath); err != nil {
+		return fmt.Errorf("replace %s: %w", outPath, err)
 	}
 
 	fmt.Printf("wrote %d stations to %s\n", len(stations), outPath)

@@ -107,6 +107,14 @@ func (s *Store) Save(st domain.TickState) error {
 		_ = tmp.Close()
 		return fmt.Errorf("write temp state: %w", err)
 	}
+	// Flushed to disk before the rename that makes it visible — otherwise a
+	// crash between the rename and the OS's own lazy flush can leave the
+	// now-current file empty or truncated, which is exactly the torn write
+	// this atomic-rename dance exists to prevent in the first place.
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temp state: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp state: %w", err)
 	}

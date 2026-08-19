@@ -64,9 +64,9 @@ func fieldValue(f Field, s domain.Settings) string {
 	case FieldName:
 		return escName(s.Name)
 	case FieldOrigin:
-		return s.OriginName
+		return html.EscapeString(s.OriginName)
 	case FieldDestination:
-		return s.DestinationName
+		return html.EscapeString(s.DestinationName)
 	case FieldReadyAt:
 		return s.ReadyAt.String()
 	case FieldDeadlineAt:

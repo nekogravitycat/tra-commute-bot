@@ -25,8 +25,15 @@ func (c *Client) LiveDelays(ctx context.Context) (usecase.DelaySnapshot, error) 
 		return usecase.DelaySnapshot{}, fmt.Errorf("tdx live board: decode: %w", err)
 	}
 
+	updatedAt, err := parseTimestamp(resp.UpdateTime, c.loc)
+	if err != nil {
+		// Metadata, not a reason to abandon an otherwise good live board — the
+		// renderer treats a zero UpdatedAt as "unknown" and omits it.
+		c.opts.Log.Warn("unparsable UpdateTime, leaving it unset", "value", resp.UpdateTime, "err", err)
+	}
+
 	snap := usecase.DelaySnapshot{
-		UpdatedAt: parseTimestamp(resp.UpdateTime, c.loc),
+		UpdatedAt: updatedAt,
 		ByTrainNo: make(map[string]int, len(resp.TrainLiveBoards)),
 	}
 	for _, item := range resp.TrainLiveBoards {

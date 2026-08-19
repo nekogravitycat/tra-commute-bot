@@ -95,8 +95,12 @@ func (d *Dir) Prune() error {
 			continue
 		}
 		// The date is taken from the filename rather than the modification
-		// time, which survives a copy or a restore.
-		day, err := time.Parse("2006-01-02", strings.TrimSuffix(e.Name(), ".jsonl"))
+		// time, which survives a copy or a restore. Parsed in cutoff's own
+		// location rather than UTC — the filename was written by Archive
+		// using d.Now(), so comparing it against cutoff in a different zone
+		// could shift the boundary by the zone offset, pruning up to a day
+		// early or late.
+		day, err := time.ParseInLocation("2006-01-02", strings.TrimSuffix(e.Name(), ".jsonl"), cutoff.Location())
 		if err != nil {
 			continue
 		}

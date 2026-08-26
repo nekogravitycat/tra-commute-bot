@@ -29,6 +29,16 @@ var backoffSchedule = []time.Duration{5 * time.Second, 10 * time.Second, 15 * ti
 // an unbounded body. No real response comes close to this.
 const maxResponseBytes = 10 << 20 // 10 MiB
 
+// tokenSafetyMargin re-authenticates a bit before the token's stated expiry,
+// so a request begun close to the boundary is never rejected mid-flight for
+// a token that was still valid when the call started.
+const tokenSafetyMargin = 5 * time.Minute
+
+// fallbackTokenTTL is used only if TDX ever returns a token with no
+// expires_in, so a missing field degrades to frequent re-authentication
+// instead of caching a token of unknown lifetime indefinitely.
+const fallbackTokenTTL = time.Hour
+
 // Credentials are the TDX client credentials, supplied via the environment.
 type Credentials struct {
 	ClientID     string
@@ -61,8 +71,9 @@ type Client struct {
 	opts  Options
 	loc   *time.Location
 
-	token     string
-	lastReqAt time.Time
+	token          string
+	tokenExpiresAt time.Time
+	lastReqAt      time.Time
 }
 
 // New builds a client. loc is the location every naive API clock is resolved
@@ -91,9 +102,12 @@ func New(creds Credentials, loc *time.Location, opts Options) *Client {
 
 // Authenticate obtains an access token.
 //
-// The token is not cached to disk. It is valid for 24 hours, but the program
-// runs once a day, so a cache would add a file, its permissions and its
-// staleness handling in exchange for saving one request out of three.
+// The token is not cached to disk — losing it on restart just costs one
+// extra request. It is not cached in memory beyond its own stated lifetime
+// either: the calling process (§4.2) runs for days at a stretch, far longer
+// than the ~24h a token lasts, so callers must check TokenValid before every
+// request and re-Authenticate once it goes stale, rather than authenticating
+// once per process.
 func (c *Client) Authenticate(ctx context.Context) error {
 	form := url.Values{
 		"grant_type":    {"client_credentials"},
@@ -111,8 +125,19 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	if tr.AccessToken == "" {
 		return fmt.Errorf("tdx auth: response carried no access_token")
 	}
+	ttl := time.Duration(tr.ExpiresIn) * time.Second
+	if ttl <= 0 {
+		ttl = fallbackTokenTTL
+	}
 	c.token = tr.AccessToken
+	c.tokenExpiresAt = time.Now().Add(ttl)
 	return nil
+}
+
+// TokenValid reports whether the cached token is still usable, with a
+// tokenSafetyMargin buffer before its real expiry.
+func (c *Client) TokenValid() bool {
+	return c.token != "" && time.Now().Add(tokenSafetyMargin).Before(c.tokenExpiresAt)
 }
 
 func (c *Client) get(ctx context.Context, name, path string) ([]byte, error) {

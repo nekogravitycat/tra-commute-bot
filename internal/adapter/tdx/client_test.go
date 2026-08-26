@@ -78,6 +78,59 @@ func TestAuthenticateRejectsEmptyToken(t *testing.T) {
 	}
 }
 
+// TestTokenValid checks the expiry bookkeeping that authOnDemand (in
+// cmd/tracommute) relies on to know when to re-authenticate. The process
+// runs for days at a time, far longer than a token's ~24h life, so a client
+// that never reports its token as stale would leave every request 401ing
+// silently once the first token expires.
+func TestTokenValid(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"access_token":"tok-123","expires_in":86400}`))
+	}), nil)
+
+	if c.TokenValid() {
+		t.Error("TokenValid before any Authenticate call, want false")
+	}
+
+	if err := c.Authenticate(context.Background()); err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if !c.TokenValid() {
+		t.Error("TokenValid right after Authenticate, want true")
+	}
+
+	// Within tokenSafetyMargin of expiry: must already report stale so the
+	// caller re-authenticates before the real API rejects the request.
+	c.tokenExpiresAt = time.Now().Add(tokenSafetyMargin - time.Second)
+	if c.TokenValid() {
+		t.Error("TokenValid inside the safety margin, want false")
+	}
+
+	c.tokenExpiresAt = time.Now().Add(-time.Hour)
+	if c.TokenValid() {
+		t.Error("TokenValid after expiry, want false")
+	}
+}
+
+// TestAuthenticateFallsBackWhenExpiresInMissing checks a token response with
+// no expires_in still gets a bounded lifetime rather than being cached as
+// valid forever.
+func TestAuthenticateFallsBackWhenExpiresInMissing(t *testing.T) {
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"access_token":"tok-123"}`))
+	}), nil)
+
+	if err := c.Authenticate(context.Background()); err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if !c.TokenValid() {
+		t.Error("TokenValid right after Authenticate, want true")
+	}
+	if got := time.Until(c.tokenExpiresAt); got > fallbackTokenTTL || got <= fallbackTokenTTL-time.Minute {
+		t.Errorf("tokenExpiresAt ~%s from now, want ~%s", got, fallbackTokenTTL)
+	}
+}
+
 // TestUnauthenticatedRequest checks a missing token is caught locally rather
 // than spent on a request that is certain to be rejected.
 func TestUnauthenticatedRequest(t *testing.T) {

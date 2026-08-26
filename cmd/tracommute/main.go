@@ -509,20 +509,25 @@ func recommendedNo(b domain.Brief) string {
 	return b.Plan.Recommended.TrainNo
 }
 
-// authOnDemand fetches a token before the first API call of the process.
+// authOnDemand fetches a token before the first API call, and transparently
+// re-authenticates whenever the cached one has gone stale.
 //
-// The token lives 24 hours but a one-shot invocation lives seconds, and the
-// long-running process makes at most a handful of ticks an hour, so caching
-// it to disk would add a file and its permissions to save very little.
+// The long-running process (§4.2) stays up for days, far longer than a TDX
+// token's ~24h life, so authenticating once per process — as this used to —
+// leaves every request failing with HTTP 401 the moment the first token
+// expires, silently, until the process is restarted. See tdx.Client.TokenValid.
 type authOnDemand struct {
 	client *tdx.Client
-	once   sync.Once
-	err    error
+	mu     sync.Mutex
 }
 
 func (a *authOnDemand) ensure(ctx context.Context) error {
-	a.once.Do(func() { a.err = a.client.Authenticate(ctx) })
-	return a.err
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.client.TokenValid() {
+		return nil
+	}
+	return a.client.Authenticate(ctx)
 }
 
 func (a *authOnDemand) DailyODTimetable(ctx context.Context, originID, destID string, date time.Time) (usecase.Timetable, error) {

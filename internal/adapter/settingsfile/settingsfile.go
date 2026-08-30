@@ -35,6 +35,36 @@ func New(path string) *Store { return &Store{Path: path} }
 type wireList struct {
 	Schedules     []wireSchedule `json:"schedules"`
 	UsualTrainNos []string       `json:"usual_train_nos"`
+	Shortcuts     []wireShortcut `json:"shortcuts"`
+}
+
+// wireShortcut is one Shortcut (§10.x), set live via /shortcuts.
+type wireShortcut struct {
+	Trigger         string `json:"trigger"`
+	OriginID        string `json:"origin_id"`
+	OriginName      string `json:"origin_name"`
+	DestinationID   string `json:"destination_id"`
+	DestinationName string `json:"destination_name"`
+}
+
+func (ws wireShortcut) toDomain() domain.Shortcut {
+	return domain.Shortcut{
+		Trigger:         ws.Trigger,
+		OriginID:        ws.OriginID,
+		OriginName:      ws.OriginName,
+		DestinationID:   ws.DestinationID,
+		DestinationName: ws.DestinationName,
+	}
+}
+
+func shortcutFromDomain(s domain.Shortcut) wireShortcut {
+	return wireShortcut{
+		Trigger:         s.Trigger,
+		OriginID:        s.OriginID,
+		OriginName:      s.OriginName,
+		DestinationID:   s.DestinationID,
+		DestinationName: s.DestinationName,
+	}
 }
 
 // wireSchedule is one Schedule. Weekdays and clock times are written as text
@@ -73,6 +103,7 @@ func (s *Store) Load() (domain.SettingsList, error) {
 	list := domain.SettingsList{
 		Schedules:     make([]domain.Settings, 0, len(w.Schedules)),
 		UsualTrainNos: w.UsualTrainNos,
+		Shortcuts:     make([]domain.Shortcut, 0, len(w.Shortcuts)),
 	}
 	for _, ws := range w.Schedules {
 		set, err := ws.toDomain()
@@ -80,6 +111,9 @@ func (s *Store) Load() (domain.SettingsList, error) {
 			return domain.SettingsList{}, fmt.Errorf("decode settings: schedule %q: %w", ws.Name, err)
 		}
 		list.Schedules = append(list.Schedules, set)
+	}
+	for _, wsc := range w.Shortcuts {
+		list.Shortcuts = append(list.Shortcuts, wsc.toDomain())
 	}
 	return list, nil
 }
@@ -160,9 +194,13 @@ func (s *Store) Save(list domain.SettingsList) error {
 	w := wireList{
 		Schedules:     make([]wireSchedule, 0, len(list.Schedules)),
 		UsualTrainNos: list.UsualTrainNos,
+		Shortcuts:     make([]wireShortcut, 0, len(list.Shortcuts)),
 	}
 	for _, set := range list.Schedules {
 		w.Schedules = append(w.Schedules, fromDomain(set))
+	}
+	for _, sc := range list.Shortcuts {
+		w.Shortcuts = append(w.Shortcuts, shortcutFromDomain(sc))
 	}
 
 	data, err := json.MarshalIndent(w, "", "  ")

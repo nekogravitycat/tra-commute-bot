@@ -35,6 +35,9 @@ func TestRoundTrip(t *testing.T) {
 			fullSchedule("下班通勤"),
 		},
 		UsualTrainNos: []string{"2008", "1136", "1138"},
+		Shortcuts: []domain.Shortcut{
+			{Trigger: "home", OriginID: "1000", OriginName: "臺北", DestinationID: "1080", DestinationName: "桃園"},
+		},
 	}
 	if err := s.Save(want); err != nil {
 		t.Fatalf("Save: %v", err)

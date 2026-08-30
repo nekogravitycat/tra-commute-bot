@@ -654,6 +654,19 @@ func TestRenderBoardListsUpcomingTrains(t *testing.T) {
 	}
 }
 
+// TestRenderBoardTitleDirectlyAbovePreBlock checks there is no blank line
+// between the header and the table when nothing else needs to appear
+// between them (no live-data warning, no unknown-type warning) — the title
+// line's newline should run straight into <pre>.
+func TestRenderBoardTitleDirectlyAbovePreBlock(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{}, at("08:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	if i := strings.Index(msg.Text, "<pre>"); i == -1 || !strings.HasSuffix(msg.Text[:i], "\n") || strings.HasSuffix(msg.Text[:i], "\n\n") {
+		t.Errorf("expected the title line to run straight into <pre> with no blank line:\n%s", msg.Text)
+	}
+}
+
 func TestRenderBoardHasNoRecommendationOrStatus(t *testing.T) {
 	res := buildBoardResult(usualServices(), map[string]int{}, at("08:00"))
 	msg := testRenderer().RenderBoard(res)
@@ -679,7 +692,7 @@ func TestRenderBoardShowsTrainTypeAbbreviation(t *testing.T) {
 	msg := testRenderer().RenderBoard(res)
 
 	// usualServices() is two 區間 and one 區間快.
-	for _, want := range []string{"LOC", "LEX"} {
+	for _, want := range []string{"LOC", "FLOC"} {
 		if !strings.Contains(msg.Text, want) {
 			t.Errorf("board message is missing the type abbreviation %q:\n%s", want, msg.Text)
 		}
@@ -689,20 +702,52 @@ func TestRenderBoardShowsTrainTypeAbbreviation(t *testing.T) {
 func TestTypeAbbrev(t *testing.T) {
 	tests := map[string]string{
 		"區間":   "LOC",
-		"區間快":  "LEX",
+		"區間快":  "FLOC",
 		"莒光":   "CK",
 		"自強":   "TC",
-		"新自強":  "TC",
-		"復興":   "FUX",
-		"普快":   "OR",
-		"太魯閣":  "TRO",
-		"普悠瑪":  "PP",
+		"新自強":  "NTC", // must not fall back to plain 自強's TC: different ticket eligibility
+		"復興":   "FH",
+		"太魯閣":  "TRK",
+		"普悠瑪":  "PYM",
 		"磁浮特快": "?",
 	}
 	for name, want := range tests {
 		if got := typeAbbrev(name); got != want {
 			t.Errorf("typeAbbrev(%q) = %q, want %q", name, got, want)
 		}
+	}
+}
+
+// TestRenderBoardDistinguishesNewTzeChiang guards the regression a plain
+// Contains match would otherwise cause: 新自強 contains 自強 as a substring,
+// but the two have different electronic-ticket eligibility, so the table
+// must never show a 新自強 row as plain TC.
+func TestRenderBoardDistinguishesNewTzeChiang(t *testing.T) {
+	services := []domain.Service{
+		svc("101", "1131", "自強", "08:00", "08:30"),
+		svc("102", "1132", "新自強", "08:10", "08:40"),
+	}
+	res := buildBoardResult(services, map[string]int{}, at("07:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	rowFor := func(trainNo string) string {
+		for _, block := range preBlocks(msg.Text) {
+			for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), trainNo) {
+					return line
+				}
+			}
+		}
+		t.Fatalf("train %s not found in rendered table:\n%s", trainNo, msg.Text)
+		return ""
+	}
+
+	plain, newTC := rowFor("101"), rowFor("102")
+	if !strings.Contains(plain, "TC") || strings.Contains(plain, "NTC") {
+		t.Errorf("plain 自強 row should show TC, not NTC:\n%s", plain)
+	}
+	if !strings.Contains(newTC, "NTC") {
+		t.Errorf("新自強 row should show NTC:\n%s", newTC)
 	}
 }
 

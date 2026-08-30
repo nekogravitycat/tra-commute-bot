@@ -271,7 +271,7 @@ func degradationText(d *domain.Degradation) string {
 // shortcut has no ready time or deadline to evaluate any of that against.
 func (t Telegram) RenderBoard(res usecase.BoardResult) usecase.Message {
 	var s strings.Builder
-	fmt.Fprintf(&s, "%s · %s\n\n",
+	fmt.Fprintf(&s, "%s · %s\n",
 		bold(res.Route.OriginName+" → "+res.Route.DestinationName), t.header(res.GeneratedAt))
 
 	switch {
@@ -322,20 +322,22 @@ func (t Telegram) boardRows(rows []domain.BoardRow) []domain.BoardRow {
 }
 
 // typeAbbrevs maps a train type's Chinese name to a short ASCII code for the
-// board table's TYPE column, checked in order so a more specific keyword
-// (區間快) is never shadowed by a shorter one it contains (區間) — the same
-// keyword-matching idea domain.TypeFilter uses for ticket eligibility, but
-// for display rather than boarding rules, so it lives here rather than in
-// config.
+// board table's TYPE column, checked in order so a more specific keyword is
+// never shadowed by a shorter one it contains — most importantly 新自強
+// before 自強, since 新自強 (EMU3000) is a different electronic-ticket
+// eligibility case from a plain 自強 despite sharing that substring, and
+// 區間快 before 區間 for the same reason. This is display-only: it lives
+// here rather than in domain.TypeFilter/config, which is what actually
+// decides eligibility.
 var typeAbbrevs = []struct{ keyword, code string }{
-	{"區間快", "LEX"},
+	{"新自強", "NTC"},
+	{"自強", "TC"},
+	{"區間快", "FLOC"},
 	{"區間", "LOC"},
 	{"莒光", "CK"},
-	{"自強", "TC"}, // covers 自強 and 新自強/EMU3000 alike
-	{"復興", "FUX"},
-	{"普快", "OR"},
-	{"太魯閣", "TRO"},
-	{"普悠瑪", "PP"},
+	{"復興", "FH"},
+	{"太魯閣", "TRK"},
+	{"普悠瑪", "PYM"},
 }
 
 // typeAbbrev returns name's ASCII code, or "?" for a type on none of the

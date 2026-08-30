@@ -224,6 +224,7 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 	delaySrc := &authOnDemand{client: client}
 	renderer := render.Telegram{
 		MaxAlternatives: cfg.MaxAlternatives,
+		MaxBoardRows:    cfg.MaxShortcutRows,
 		CertificateNote: cfg.CertificateNote,
 	}
 

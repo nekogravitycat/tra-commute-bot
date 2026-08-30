@@ -12,22 +12,23 @@ import (
 // optional; anything that would make the program guess about the user's
 // commute is required.
 const (
-	defaultTolerance      = 2 * time.Minute
-	defaultRetryWindow    = 10 * time.Minute
-	defaultLookback       = 30 * time.Minute
-	defaultLookahead      = 60 * time.Minute
-	defaultBoardBuffer    = 2 * time.Minute
-	defaultRiskMargin     = 3 * time.Minute
-	defaultCertMinDelay   = 5 * time.Minute
-	defaultSevere         = 30 * time.Minute
-	defaultInterval       = 1500 * time.Millisecond
-	defaultTimeout        = 15 * time.Second
-	defaultMaxAlternative = 4
-	defaultRetainDays     = 30
-	defaultTimezone       = "Asia/Taipei"
-	defaultStatePath      = "/var/lib/tra-commute/state.json"
-	defaultSettingsPath   = "/var/lib/tra-commute/settings.json"
-	defaultArchiveDir     = "/var/lib/tra-commute/dumps"
+	defaultTolerance       = 2 * time.Minute
+	defaultRetryWindow     = 10 * time.Minute
+	defaultLookback        = 30 * time.Minute
+	defaultLookahead       = 60 * time.Minute
+	defaultBoardBuffer     = 2 * time.Minute
+	defaultRiskMargin      = 3 * time.Minute
+	defaultCertMinDelay    = 5 * time.Minute
+	defaultSevere          = 30 * time.Minute
+	defaultInterval        = 1500 * time.Millisecond
+	defaultTimeout         = 15 * time.Second
+	defaultMaxAlternative  = 4
+	defaultMaxShortcutRows = 5
+	defaultRetainDays      = 30
+	defaultTimezone        = "Asia/Taipei"
+	defaultStatePath       = "/var/lib/tra-commute/state.json"
+	defaultSettingsPath    = "/var/lib/tra-commute/settings.json"
+	defaultArchiveDir      = "/var/lib/tra-commute/dumps"
 )
 
 // defaultKnownTypeKeywords lists the train types confirmed to accept electronic
@@ -104,6 +105,10 @@ func (f File) Build() (Config, error) {
 	c.MaxAlternatives = f.Output.MaxAlternatives
 	if c.MaxAlternatives <= 0 {
 		c.MaxAlternatives = defaultMaxAlternative
+	}
+	c.MaxShortcutRows = f.Output.MaxShortcutRows
+	if c.MaxShortcutRows <= 0 {
+		c.MaxShortcutRows = defaultMaxShortcutRows
 	}
 
 	c.StatePath = orDefault(f.Storage.StatePath, defaultStatePath)

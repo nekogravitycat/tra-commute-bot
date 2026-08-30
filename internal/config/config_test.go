@@ -50,6 +50,9 @@ func TestLoadExampleConfig(t *testing.T) {
 	if cfg.SettingsPath == "" {
 		t.Error("settings_path should default to a non-empty path")
 	}
+	if cfg.MaxShortcutRows != 5 {
+		t.Errorf("max shortcut rows = %d, want 5", cfg.MaxShortcutRows)
+	}
 }
 
 // TestLocalConfigMatchesExample guards against the development config drifting
@@ -96,6 +99,7 @@ func TestDefaults(t *testing.T) {
 		{"request interval", cfg.RequestInterval, 1500 * time.Millisecond},
 		{"request timeout", cfg.RequestTimeout, 15 * time.Second},
 		{"max alternatives", cfg.MaxAlternatives, 4},
+		{"max shortcut rows", cfg.MaxShortcutRows, 5},
 		{"archive retention", cfg.ArchiveRetention, 30 * 24 * time.Hour},
 		{"state path", cfg.StatePath, "/var/lib/tra-commute/state.json"},
 		{"settings path", cfg.SettingsPath, "/var/lib/tra-commute/settings.json"},

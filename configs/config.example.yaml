@@ -72,6 +72,7 @@ api:
 
 output:
   max_alternatives: 4
+  max_shortcut_rows: 5 # how many upcoming trains a /shortcuts query shows
   timezone: "Asia/Taipei"
 
 storage:

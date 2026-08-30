@@ -67,7 +67,11 @@ type File struct {
 	} `yaml:"api"`
 
 	Output struct {
-		MaxAlternatives int    `yaml:"max_alternatives"`
+		MaxAlternatives int `yaml:"max_alternatives"`
+		// MaxShortcutRows caps how many upcoming trains a /shortcuts query's
+		// live board shows (§10.x). Unlike MaxAlternatives it has nothing to
+		// rank against — a shortcut just wants the soonest few departures.
+		MaxShortcutRows int    `yaml:"max_shortcut_rows"`
 		Timezone        string `yaml:"timezone"`
 	} `yaml:"output"`
 
@@ -118,6 +122,7 @@ type Config struct {
 	RequestTimeout  time.Duration
 
 	MaxAlternatives int
+	MaxShortcutRows int
 
 	StatePath        string
 	SettingsPath     string

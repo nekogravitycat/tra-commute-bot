@@ -32,6 +32,11 @@ import (
 type Telegram struct {
 	// MaxAlternatives caps the rows in the comparison table.
 	MaxAlternatives int
+	// MaxBoardRows caps the rows in a /shortcuts query's live board — see
+	// RenderBoard. Unlike MaxAlternatives it is not "the best few of a
+	// ranking", just "the soonest few departures", since a shortcut has
+	// nothing to rank against.
+	MaxBoardRows int
 	// CertificateNote is the config's reminder of where to apply.
 	CertificateNote string
 }
@@ -284,7 +289,7 @@ func (t Telegram) RenderBoard(res usecase.BoardResult) usecase.Message {
 		if warn := unknownTypeWarning(res.Board.UnknownTypes); warn != "" {
 			s.WriteString(warn + "\n\n")
 		}
-		s.WriteString(pre(t.boardTable(res.Board.Rows)))
+		s.WriteString(pre(t.boardTable(t.boardRows(res.Board.Rows))))
 		if res.Board.SuspendedCount > 0 {
 			fmt.Fprintf(&s, "另有 %d 班停駛。\n", res.Board.SuspendedCount)
 		}
@@ -296,14 +301,63 @@ func (t Telegram) RenderBoard(res usecase.BoardResult) usecase.Message {
 	return usecase.Message{Text: strings.TrimRight(s.String(), "\n"), ParseMode: "HTML"}
 }
 
+// defaultMaxBoardRows mirrors candidateTable's fallback for MaxAlternatives:
+// a Telegram value built without going through config (as in a test) still
+// gets a sane cap rather than an unbounded table.
+const defaultMaxBoardRows = 5
+
+// boardRows caps rows to the soonest MaxBoardRows departures. Board.Rows is
+// already sorted by estimated departure, so this is a plain prefix — there
+// is no ranking to preserve, unlike tableRows' recommendation-plus-habitual
+// selection.
+func (t Telegram) boardRows(rows []domain.BoardRow) []domain.BoardRow {
+	n := t.MaxBoardRows
+	if n <= 0 {
+		n = defaultMaxBoardRows
+	}
+	if n > len(rows) {
+		n = len(rows)
+	}
+	return rows[:n]
+}
+
+// typeAbbrevs maps a train type's Chinese name to a short ASCII code for the
+// board table's TYPE column, checked in order so a more specific keyword
+// (區間快) is never shadowed by a shorter one it contains (區間) — the same
+// keyword-matching idea domain.TypeFilter uses for ticket eligibility, but
+// for display rather than boarding rules, so it lives here rather than in
+// config.
+var typeAbbrevs = []struct{ keyword, code string }{
+	{"區間快", "LEX"},
+	{"區間", "LOC"},
+	{"莒光", "CK"},
+	{"自強", "TC"}, // covers 自強 and 新自強/EMU3000 alike
+	{"復興", "FUX"},
+	{"普快", "OR"},
+	{"太魯閣", "TRO"},
+	{"普悠瑪", "PP"},
+}
+
+// typeAbbrev returns name's ASCII code, or "?" for a type on none of the
+// lists — the same "unknown" signal unknownTypeWarning already names in
+// prose below the table, so a "?" row is never a mystery on its own.
+func typeAbbrev(name string) string {
+	for _, e := range typeAbbrevs {
+		if strings.Contains(name, e.keyword) {
+			return e.code
+		}
+	}
+	return "?"
+}
+
 // boardTable lists every row with no status column: a shortcut has no
-// recommendation to mark, only trains and their live delay.
+// recommendation to mark, only trains, their type and their live delay.
 func (t Telegram) boardTable(rows []domain.BoardRow) string {
 	var tb table
-	tb.headers = []string{"NO.", "DLY", "DEP", "ARR"}
-	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight}
+	tb.headers = []string{"NO.", "TYPE", "DLY", "DEP", "ARR"}
+	tb.aligns = []align{alignLeft, alignLeft, alignRight, alignRight, alignRight}
 	for _, r := range rows {
-		tb.addRow(r.TrainNo, delayCell(r.DelaySource, r.DelayMinutes()), clock(r.EstDep), clock(r.EstArr))
+		tb.addRow(r.TrainNo, typeAbbrev(r.TypeName), delayCell(r.DelaySource, r.DelayMinutes()), clock(r.EstDep), clock(r.EstArr))
 	}
 	return tb.render()
 }

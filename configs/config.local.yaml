@@ -36,6 +36,7 @@ api:
 
 output:
   max_alternatives: 4
+  max_shortcut_rows: 5
   timezone: "Asia/Taipei"
 
 storage:

@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"html"
 	"regexp"
 	"strings"
@@ -670,6 +671,83 @@ func TestRenderBoardNoMoreTrains(t *testing.T) {
 
 	if !strings.Contains(msg.Text, "已經沒有更多列車") {
 		t.Errorf("expected a no-more-trains notice:\n%s", msg.Text)
+	}
+}
+
+func TestRenderBoardShowsTrainTypeAbbreviation(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{}, at("08:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	// usualServices() is two 區間 and one 區間快.
+	for _, want := range []string{"LOC", "LEX"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("board message is missing the type abbreviation %q:\n%s", want, msg.Text)
+		}
+	}
+}
+
+func TestTypeAbbrev(t *testing.T) {
+	tests := map[string]string{
+		"區間":   "LOC",
+		"區間快":  "LEX",
+		"莒光":   "CK",
+		"自強":   "TC",
+		"新自強":  "TC",
+		"復興":   "FUX",
+		"普快":   "OR",
+		"太魯閣":  "TRO",
+		"普悠瑪":  "PP",
+		"磁浮特快": "?",
+	}
+	for name, want := range tests {
+		if got := typeAbbrev(name); got != want {
+			t.Errorf("typeAbbrev(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestRenderBoardCapsRows checks a route with more upcoming trains than the
+// configured cap only lists the soonest few, since a shortcut has no
+// ranking to fall back to for deciding which to keep.
+func TestRenderBoardCapsRows(t *testing.T) {
+	services := make([]domain.Service, 8)
+	for i := range services {
+		dep := fmt.Sprintf("%02d:00", 8+i)
+		arr := fmt.Sprintf("%02d:30", 8+i)
+		services[i] = svc(fmt.Sprintf("%d", 1000+i), "1131", "區間", dep, arr)
+	}
+	res := buildBoardResult(services, map[string]int{}, at("07:00"))
+
+	r := testRenderer()
+	r.MaxBoardRows = 3
+	msg := r.RenderBoard(res)
+
+	for i, want := range []bool{true, true, true, false, false} {
+		trainNo := fmt.Sprintf("%d", 1000+i)
+		if got := strings.Contains(msg.Text, trainNo); got != want {
+			t.Errorf("train %s present = %v, want %v (cap is 3):\n%s", trainNo, got, want, msg.Text)
+		}
+	}
+}
+
+// TestRenderBoardDefaultRowCap checks a Telegram value built without going
+// through config (MaxBoardRows left at zero) still caps the table rather
+// than listing every remaining train of the day.
+func TestRenderBoardDefaultRowCap(t *testing.T) {
+	services := make([]domain.Service, 8)
+	for i := range services {
+		dep := fmt.Sprintf("%02d:00", 8+i)
+		arr := fmt.Sprintf("%02d:30", 8+i)
+		services[i] = svc(fmt.Sprintf("%d", 1000+i), "1131", "區間", dep, arr)
+	}
+	res := buildBoardResult(services, map[string]int{}, at("07:00"))
+
+	msg := Telegram{}.RenderBoard(res)
+	if strings.Contains(msg.Text, "1007") {
+		t.Errorf("the 8th train should be capped by the default limit:\n%s", msg.Text)
+	}
+	if !strings.Contains(msg.Text, "1004") {
+		t.Errorf("the 5th train should still be within the default limit:\n%s", msg.Text)
 	}
 }
 

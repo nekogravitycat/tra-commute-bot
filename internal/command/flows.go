@@ -41,6 +41,12 @@ func (r *Router) askCurrentField(ctx context.Context, sess *Session) {
 		r.send(ctx, "幾點通知你？請輸入時刻，格式 HH:mm（例如 07:50）")
 	case FieldMaxEarlyLeave:
 		r.send(ctx, "遲到時最多能接受提早幾分鐘出門？（輸入數字，例如 15）")
+	case FieldShortcutTrigger:
+		r.send(ctx, "設定觸發詞彙，之後傳送這個詞就會立即查詢這條路線（例如 home）")
+	case FieldShortcutOrigin:
+		r.send(ctx, "起始站？請輸入站名關鍵字（中文、英文、或站碼皆可）")
+	case FieldShortcutDestination:
+		r.send(ctx, "目的地站？請輸入站名關鍵字（中文、英文、或站碼皆可）")
 	}
 }
 
@@ -61,6 +67,10 @@ func (r *Router) advance(ctx context.Context, sess *Session) {
 // complete before the edit and is still complete after it, so it applies
 // straight away (§10.6).
 func (r *Router) finishFlow(ctx context.Context, sess *Session) {
+	if sess.Kind == KindShortcut {
+		r.confirmShortcut(ctx, sess)
+		return
+	}
 	if sess.Editing == "" {
 		r.send(ctx, fmt.Sprintf("✅ 設定完成：%s\n%s", esc(sess.Draft.Name), card(sess.Draft)))
 		r.sendKeyboard(ctx, "確認要建立這條規則嗎？", setupConfirmKeyboard())
@@ -80,7 +90,7 @@ func (r *Router) handleFieldText(ctx context.Context, sess *Session, text string
 	switch f {
 	case FieldName:
 		r.handleNameText(ctx, sess, text)
-	case FieldOrigin, FieldDestination:
+	case FieldOrigin, FieldDestination, FieldShortcutOrigin, FieldShortcutDestination:
 		r.handleStationText(ctx, sess, f, text)
 	case FieldReadyAt, FieldDeadlineAt:
 		r.handleTimeText(ctx, sess, f, text)
@@ -90,6 +100,8 @@ func (r *Router) handleFieldText(ctx context.Context, sess *Session, text string
 		r.handleTimeText(ctx, sess, f, text)
 	case FieldMaxEarlyLeave:
 		r.handleMinutesText(ctx, sess, text)
+	case FieldShortcutTrigger:
+		r.handleShortcutTriggerText(ctx, sess, text)
 	}
 }
 
@@ -108,13 +120,42 @@ func (r *Router) handleNameText(ctx context.Context, sess *Session, text string)
 	r.advance(ctx, sess)
 }
 
+// stationSetter stores one resolved Station wherever the caller's flow keeps
+// its origin/destination. Factoring subflow A (§10.4-A) around this function
+// value — rather than writing straight into Session.Draft — is what lets
+// /setup, /manage's route edit and /shortcuts' add flow all share the same
+// matching and disambiguation logic despite filling in different structs
+// (domain.Settings vs domain.Shortcut).
+type stationSetter func(domain.Station)
+
+// stationSetterFor returns the setter for whichever field is currently being
+// collected, or nil for a field with no station to set.
+func stationSetterFor(sess *Session, f Field) stationSetter {
+	switch f {
+	case FieldOrigin:
+		return func(s domain.Station) { sess.Draft.OriginID, sess.Draft.OriginName = s.ID, s.NameZh }
+	case FieldDestination:
+		return func(s domain.Station) { sess.Draft.DestinationID, sess.Draft.DestinationName = s.ID, s.NameZh }
+	case FieldShortcutOrigin:
+		return func(s domain.Station) { sess.ShortcutDraft.OriginID, sess.ShortcutDraft.OriginName = s.ID, s.NameZh }
+	case FieldShortcutDestination:
+		return func(s domain.Station) {
+			sess.ShortcutDraft.DestinationID, sess.ShortcutDraft.DestinationName = s.ID, s.NameZh
+		}
+	default:
+		return nil
+	}
+}
+
+// handleStationText runs subflow A's matching step (§10.4-A) for whichever
+// field is currently active, then hands the result to that field's setter.
 func (r *Router) handleStationText(ctx context.Context, sess *Session, f Field, text string) {
 	matches := domain.MatchStations(r.Stations, text)
 	switch {
 	case len(matches) == 0:
 		r.send(ctx, "找不到符合的車站，換個關鍵字試試？")
 	case len(matches) == 1:
-		r.setStation(sess, f, matches[0])
+		stationSetterFor(sess, f)(matches[0])
 		r.advance(ctx, sess)
 	default:
 		if len(matches) > maxStationChoices {
@@ -122,15 +163,6 @@ func (r *Router) handleStationText(ctx context.Context, sess *Session, f Field, 
 		}
 		sess.StationMatches = matches
 		r.sendKeyboard(ctx, "找到多筆符合的車站，請選擇：", stationKeyboard(matches))
-	}
-}
-
-func (r *Router) setStation(sess *Session, f Field, s domain.Station) {
-	switch f {
-	case FieldOrigin:
-		sess.Draft.OriginID, sess.Draft.OriginName = s.ID, s.NameZh
-	case FieldDestination:
-		sess.Draft.DestinationID, sess.Draft.DestinationName = s.ID, s.NameZh
 	}
 }
 
@@ -208,7 +240,7 @@ func (r *Router) handleFieldCallback(ctx context.Context, sess *Session, cq tele
 	data := cq.Data
 
 	switch f {
-	case FieldOrigin, FieldDestination:
+	case FieldOrigin, FieldDestination, FieldShortcutOrigin, FieldShortcutDestination:
 		switch {
 		case data == cbStationRetry:
 			r.answer(ctx, cq.ID, "")
@@ -222,7 +254,7 @@ func (r *Router) handleFieldCallback(ctx context.Context, sess *Session, cq tele
 				return true
 			}
 			r.answer(ctx, cq.ID, "")
-			r.setStation(sess, f, sess.StationMatches[i])
+			stationSetterFor(sess, f)(sess.StationMatches[i])
 			sess.StationMatches = nil
 			r.advance(ctx, sess)
 			return true

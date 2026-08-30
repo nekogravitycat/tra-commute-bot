@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
+	"github.com/nekogravitycat/tra-commute-bot/internal/usecase"
 )
 
 var testLoc = time.FixedZone("Asia/Taipei", 8*3600)
@@ -616,6 +617,102 @@ func TestWeekdayHeader(t *testing.T) {
 	// 2026-08-18 is a Tuesday.
 	if got := testRenderer().header(at("07:50")); got != "8/18 (二) 07:50" {
 		t.Errorf("header = %q, want \"8/18 (二) 07:50\"", got)
+	}
+}
+
+func testFilter() domain.TypeFilter {
+	return domain.TypeFilter{
+		ExcludedIDs:      map[string]bool{"1101": true, "1107": true},
+		ExcludedKeywords: []string{"普悠瑪", "太魯閣"},
+		KnownKeywords:    []string{"區間快", "區間", "自強", "莒光"},
+		Policy:           domain.IncludeAndFlag,
+	}
+}
+
+func buildBoardResult(services []domain.Service, delays map[string]int, now time.Time) usecase.BoardResult {
+	return usecase.BoardResult{
+		Route:             domain.Route{OriginName: "桃園", DestinationName: "臺北"},
+		GeneratedAt:       now,
+		Board:             domain.BuildBoard(services, delays, testFilter(), now),
+		LiveDataAvailable: true,
+		DataUpdatedAt:     now,
+	}
+}
+
+func TestRenderBoardListsUpcomingTrains(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{"2008": 5}, at("08:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	if msg.ParseMode != "HTML" {
+		t.Errorf("parse mode = %q, want HTML", msg.ParseMode)
+	}
+	for _, want := range []string{"桃園 → 臺北", "1136", "2008", "1138", "+5"} {
+		if !strings.Contains(msg.Text, want) {
+			t.Errorf("board message is missing %q:\n%s", want, msg.Text)
+		}
+	}
+}
+
+func TestRenderBoardHasNoRecommendationOrStatus(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{}, at("08:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	for _, unwanted := range []string{"REC", "RISK", "GONE", "建議搭乘"} {
+		if strings.Contains(msg.Text, unwanted) {
+			t.Errorf("a shortcut board should not rank or recommend a train, found %q:\n%s", unwanted, msg.Text)
+		}
+	}
+}
+
+func TestRenderBoardNoMoreTrains(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{}, at("23:00"))
+	msg := testRenderer().RenderBoard(res)
+
+	if !strings.Contains(msg.Text, "已經沒有更多列車") {
+		t.Errorf("expected a no-more-trains notice:\n%s", msg.Text)
+	}
+}
+
+func TestRenderBoardTimetableFailure(t *testing.T) {
+	res := usecase.BoardResult{
+		Route:        domain.Route{OriginName: "桃園", DestinationName: "臺北"},
+		GeneratedAt:  at("08:00"),
+		TimetableErr: true,
+	}
+	msg := testRenderer().RenderBoard(res)
+
+	if !strings.Contains(msg.Text, "查詢失敗") {
+		t.Errorf("expected a failure notice:\n%s", msg.Text)
+	}
+}
+
+func TestRenderBoardLiveDataUnavailable(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{}, at("08:00"))
+	res.LiveDataAvailable = false
+	msg := testRenderer().RenderBoard(res)
+
+	if !strings.Contains(msg.Text, "無法取得即時誤點資料") {
+		t.Errorf("expected a live-data warning:\n%s", msg.Text)
+	}
+}
+
+// TestRenderBoardTableFitsPhoneWidth and TestRenderBoardPreLinesDoNotStartWithSpace
+// guard the same layout invariants as the ranked comparison table, since the
+// board table shares the same <pre> mechanics.
+func TestRenderBoardTableFitsPhoneWidth(t *testing.T) {
+	res := buildBoardResult(usualServices(), map[string]int{"1136": 8, "2008": 124, "1138": 2}, at("08:00"))
+	for _, block := range preBlocks(testRenderer().RenderBoard(res).Text) {
+		for _, line := range strings.Split(strings.TrimRight(block, "\n"), "\n") {
+			if got := cellWidth(line); got > maxTableWidth {
+				t.Errorf("line is %d characters, over the %d budget:\n%s", got, maxTableWidth, line)
+			}
+			if strings.HasPrefix(line, " ") {
+				t.Errorf("line starts with a space and will lose its indent:\n%q", line)
+			}
+			if !isASCII(line) {
+				t.Errorf("non-ASCII inside a <pre> block, which will not align:\n%q", line)
+			}
+		}
 	}
 }
 

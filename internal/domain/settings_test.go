@@ -197,3 +197,96 @@ func TestSettingsListRemovePreservesUsualTrainNos(t *testing.T) {
 		t.Errorf("usual train nos = %v, want unchanged [2008 1136]", l.UsualTrainNos)
 	}
 }
+
+func homeShortcut() Shortcut {
+	return Shortcut{Trigger: "home", OriginID: "1000", OriginName: "臺北", DestinationID: "1080", DestinationName: "桃園"}
+}
+
+func TestShortcutRoute(t *testing.T) {
+	r := homeShortcut().Route()
+	if r.OriginName != "臺北" || r.DestinationName != "桃園" {
+		t.Errorf("route = %+v, want 臺北 -> 桃園", r)
+	}
+}
+
+func TestSettingsListFindShortcutByTriggerCaseInsensitive(t *testing.T) {
+	l := SettingsList{Shortcuts: []Shortcut{homeShortcut()}}
+
+	for _, q := range []string{"home", "Home", "HOME", " home "} {
+		if _, ok := l.FindShortcutByTrigger(q); !ok {
+			t.Errorf("FindShortcutByTrigger(%q) did not match, want a case-insensitive hit", q)
+		}
+	}
+	if _, ok := l.FindShortcutByTrigger("office"); ok {
+		t.Error("did not expect a match for an unconfigured trigger")
+	}
+}
+
+func TestSettingsListTriggerTakenCaseInsensitive(t *testing.T) {
+	l := SettingsList{Shortcuts: []Shortcut{homeShortcut()}}
+
+	if !l.TriggerTaken("Home") {
+		t.Error("expected the existing trigger to be taken, case-insensitively")
+	}
+	if l.TriggerTaken("office") {
+		t.Error("did not expect an unused trigger to be taken")
+	}
+}
+
+func TestSettingsListAddShortcut(t *testing.T) {
+	var l SettingsList
+	l = l.AddShortcut(homeShortcut())
+
+	if len(l.Shortcuts) != 1 || l.Shortcuts[0].Trigger != "home" {
+		t.Fatalf("shortcuts = %+v, want [home]", l.Shortcuts)
+	}
+}
+
+func TestSettingsListRemoveShortcut(t *testing.T) {
+	l := SettingsList{Shortcuts: []Shortcut{
+		homeShortcut(),
+		{Trigger: "office", OriginID: "1080", OriginName: "桃園", DestinationID: "1000", DestinationName: "臺北"},
+	}}
+	l = l.RemoveShortcut("HOME")
+
+	if len(l.Shortcuts) != 1 || l.Shortcuts[0].Trigger != "office" {
+		t.Fatalf("shortcuts = %+v, want only office left", l.Shortcuts)
+	}
+}
+
+// TestSettingsListUpsertPreservesShortcuts and
+// TestSettingsListRemovePreservesShortcuts guard the same class of
+// regression as the UsualTrainNos tests above: writing or deleting a
+// Schedule must not silently wipe the unrelated Shortcuts list.
+func TestSettingsListUpsertPreservesShortcuts(t *testing.T) {
+	l := SettingsList{Shortcuts: []Shortcut{homeShortcut()}}
+	l = l.Upsert(commuteSettings("上班通勤"))
+
+	if len(l.Shortcuts) != 1 {
+		t.Errorf("shortcuts = %+v, want unchanged [home]", l.Shortcuts)
+	}
+}
+
+func TestSettingsListRemovePreservesShortcuts(t *testing.T) {
+	l := SettingsList{
+		Schedules: []Settings{commuteSettings("上班通勤")},
+		Shortcuts: []Shortcut{homeShortcut()},
+	}
+	l = l.Remove("上班通勤")
+
+	if len(l.Shortcuts) != 1 {
+		t.Errorf("shortcuts = %+v, want unchanged [home]", l.Shortcuts)
+	}
+}
+
+// TestSettingsListAddShortcutPreservesUsualTrainNos guards the reverse
+// direction: adding a shortcut must not disturb the unrelated usual-train
+// list.
+func TestSettingsListAddShortcutPreservesUsualTrainNos(t *testing.T) {
+	l := SettingsList{UsualTrainNos: []string{"2008"}}
+	l = l.AddShortcut(homeShortcut())
+
+	if len(l.UsualTrainNos) != 1 || l.UsualTrainNos[0] != "2008" {
+		t.Errorf("usual train nos = %v, want unchanged [2008]", l.UsualTrainNos)
+	}
+}

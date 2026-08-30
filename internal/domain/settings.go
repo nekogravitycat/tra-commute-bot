@@ -2,6 +2,7 @@ package domain
 
 import (
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,28 @@ func (s Settings) Schedule() Schedule {
 	return Schedule{Name: s.Name, Weekdays: s.ScheduleWeekdays, At: s.ScheduleAt}
 }
 
+// Shortcut is one quick on-demand query (§10.x): a trigger word that, sent as
+// a plain chat message, answers with the live board for one route right now
+// rather than waiting for a Schedule's own notify time. Unlike a Schedule it
+// carries no ready time, deadline or notify schedule — it isn't a commute
+// rule to fire later, it's a question to answer immediately.
+type Shortcut struct {
+	// Trigger is matched case-insensitively against an incoming message
+	// (see SettingsList.FindShortcutByTrigger), so "home" and "Home" both
+	// fire it.
+	Trigger         string
+	OriginID        string
+	OriginName      string
+	DestinationID   string
+	DestinationName string
+}
+
+// Route builds the Route value a shortcut's board query renders the header
+// from, the same shape Settings.Route builds for a scheduled brief.
+func (s Shortcut) Route() Route {
+	return Route{OriginName: s.OriginName, DestinationName: s.DestinationName}
+}
+
 // SettingsList is every Schedule the user has configured, the on-disk shape
 // of settings.json (§10.8). Order is preserved across Save/Load so /manage's
 // listing stays stable between edits.
@@ -73,6 +96,12 @@ type SettingsList struct {
 	// spec.md §8's note). Set live via /usualtrain rather than config.yaml,
 	// so it takes effect on the next tick without a restart.
 	UsualTrainNos []string
+
+	// Shortcuts are the user's quick on-demand queries, set live via
+	// /shortcuts. Like UsualTrainNos this is its own top-level list rather
+	// than nested under any one Schedule, since a shortcut answers a
+	// question about a route, not about a commute rule.
+	Shortcuts []Shortcut
 }
 
 // Find returns the named Schedule, if any.
@@ -106,6 +135,7 @@ func (l SettingsList) Upsert(s Settings) SettingsList {
 	out := SettingsList{
 		Schedules:     slices.Clone(l.Schedules),
 		UsualTrainNos: slices.Clone(l.UsualTrainNos),
+		Shortcuts:     slices.Clone(l.Shortcuts),
 	}
 	for i, existing := range out.Schedules {
 		if existing.Name == s.Name {
@@ -124,6 +154,7 @@ func (l SettingsList) Remove(name string) SettingsList {
 			return s.Name == name
 		}),
 		UsualTrainNos: slices.Clone(l.UsualTrainNos),
+		Shortcuts:     slices.Clone(l.Shortcuts),
 	}
 }
 
@@ -136,6 +167,7 @@ func (l SettingsList) AddUsualTrain(no string) SettingsList {
 	return SettingsList{
 		Schedules:     slices.Clone(l.Schedules),
 		UsualTrainNos: append(slices.Clone(l.UsualTrainNos), no),
+		Shortcuts:     slices.Clone(l.Shortcuts),
 	}
 }
 
@@ -146,6 +178,58 @@ func (l SettingsList) RemoveUsualTrain(no string) SettingsList {
 		Schedules: slices.Clone(l.Schedules),
 		UsualTrainNos: slices.DeleteFunc(slices.Clone(l.UsualTrainNos), func(existing string) bool {
 			return existing == no
+		}),
+		Shortcuts: slices.Clone(l.Shortcuts),
+	}
+}
+
+// FindShortcutByTrigger matches an incoming plain-text message against every
+// configured Shortcut, case-insensitively — "home" and "Home" both fire the
+// same shortcut, since a phone keyboard's autocapitalisation should not be
+// the difference between a hit and a miss.
+func (l SettingsList) FindShortcutByTrigger(text string) (Shortcut, bool) {
+	q := strings.ToLower(strings.TrimSpace(text))
+	if q == "" {
+		return Shortcut{}, false
+	}
+	for _, s := range l.Shortcuts {
+		if strings.ToLower(s.Trigger) == q {
+			return s, true
+		}
+	}
+	return Shortcut{}, false
+}
+
+// TriggerTaken reports whether trigger is already used by another Shortcut,
+// case-insensitively.
+func (l SettingsList) TriggerTaken(trigger string) bool {
+	q := strings.ToLower(trigger)
+	return slices.ContainsFunc(l.Shortcuts, func(s Shortcut) bool {
+		return strings.ToLower(s.Trigger) == q
+	})
+}
+
+// AddShortcut returns a copy of the list with s appended. Unlike Settings'
+// Upsert, a shortcut is never edited in place (§10.x: /shortcuts only adds
+// and deletes) — a trigger already taken is rejected by the caller before
+// this is reached, via TriggerTaken.
+func (l SettingsList) AddShortcut(s Shortcut) SettingsList {
+	return SettingsList{
+		Schedules:     slices.Clone(l.Schedules),
+		UsualTrainNos: slices.Clone(l.UsualTrainNos),
+		Shortcuts:     append(slices.Clone(l.Shortcuts), s),
+	}
+}
+
+// RemoveShortcut returns a copy of the list with the named trigger's
+// Shortcut deleted, matched case-insensitively like FindShortcutByTrigger.
+func (l SettingsList) RemoveShortcut(trigger string) SettingsList {
+	q := strings.ToLower(trigger)
+	return SettingsList{
+		Schedules:     slices.Clone(l.Schedules),
+		UsualTrainNos: slices.Clone(l.UsualTrainNos),
+		Shortcuts: slices.DeleteFunc(slices.Clone(l.Shortcuts), func(s Shortcut) bool {
+			return strings.ToLower(s.Trigger) == q
 		}),
 	}
 }

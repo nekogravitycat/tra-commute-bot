@@ -89,7 +89,7 @@ func (t Telegram) renderNormal(b domain.Brief) string {
 	fmt.Fprintf(&s, "%s · 預計 %s 抵達（餘裕 %d 分）\n",
 		delayPhrase(rec), clock(rec.EstArr), minutes(b.Params.SlackFor(rec.EstArr)))
 
-	if warn := unknownTypeWarning(b.Plan); warn != "" {
+	if warn := unknownTypeWarning(b.Plan.UnknownTypes); warn != "" {
 		s.WriteString("\n" + warn + "\n")
 	}
 	if b.Plan.BestRisky != nil {
@@ -142,7 +142,7 @@ func (t Telegram) renderLate(b domain.Brief) string {
 	if cert := t.certificateBlock(b); cert != "" {
 		s.WriteString("\n" + cert)
 	}
-	if warn := unknownTypeWarning(b.Plan); warn != "" {
+	if warn := unknownTypeWarning(b.Plan.UnknownTypes); warn != "" {
 		s.WriteString("\n" + warn + "\n")
 	}
 
@@ -258,6 +258,56 @@ func degradationText(d *domain.Degradation) string {
 	}
 }
 
+// --------------------------------------------------------- shortcut board (§10.x)
+
+// RenderBoard produces the message for one /shortcuts trigger: today's
+// remaining departures for a route, in departure order, with none of
+// Render's recommendation, ranking or certificate/compensation logic — a
+// shortcut has no ready time or deadline to evaluate any of that against.
+func (t Telegram) RenderBoard(res usecase.BoardResult) usecase.Message {
+	var s strings.Builder
+	fmt.Fprintf(&s, "%s · %s\n\n",
+		bold(res.Route.OriginName+" → "+res.Route.DestinationName), t.header(res.GeneratedAt))
+
+	switch {
+	case res.TimetableErr:
+		s.WriteString("查詢失敗，暫時無法取得台鐵時刻表。\n\n請自行以台鐵 App 確認。\n")
+	case len(res.Board.Rows) == 0:
+		s.WriteString("今天這條路線已經沒有更多列車了。\n")
+		if res.Board.SuspendedCount > 0 {
+			fmt.Fprintf(&s, "另有 %d 班停駛。\n", res.Board.SuspendedCount)
+		}
+	default:
+		if !res.LiveDataAvailable {
+			s.WriteString("無法取得即時誤點資料，以下為表定時刻。\n\n")
+		}
+		if warn := unknownTypeWarning(res.Board.UnknownTypes); warn != "" {
+			s.WriteString(warn + "\n\n")
+		}
+		s.WriteString(pre(t.boardTable(res.Board.Rows)))
+		if res.Board.SuspendedCount > 0 {
+			fmt.Fprintf(&s, "另有 %d 班停駛。\n", res.Board.SuspendedCount)
+		}
+		if !res.DataUpdatedAt.IsZero() {
+			fmt.Fprintf(&s, "資料更新 %s\n", res.DataUpdatedAt.Format("15:04:05"))
+		}
+	}
+
+	return usecase.Message{Text: strings.TrimRight(s.String(), "\n"), ParseMode: "HTML"}
+}
+
+// boardTable lists every row with no status column: a shortcut has no
+// recommendation to mark, only trains and their live delay.
+func (t Telegram) boardTable(rows []domain.BoardRow) string {
+	var tb table
+	tb.headers = []string{"NO.", "DLY", "DEP", "ARR"}
+	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight}
+	for _, r := range rows {
+		tb.addRow(r.TrainNo, delayCell(r.DelaySource, r.DelayMinutes()), clock(r.EstDep), clock(r.EstArr))
+	}
+	return tb.render()
+}
+
 // ------------------------------------------------------------------- fragments
 
 // candidateTable is the comparison grid both the normal and the late template
@@ -271,7 +321,7 @@ func (t Telegram) candidateTable(b domain.Brief) string {
 	tb.headers = []string{"NO.", "DLY", "DEP", "ARR", ""}
 	tb.aligns = []align{alignLeft, alignRight, alignRight, alignRight, alignLeft}
 	for _, c := range t.tableRows(b) {
-		tb.addRow(c.TrainNo, delayCell(c), clock(c.EstDep), clock(c.EstArr), lateStatus(b, c))
+		tb.addRow(c.TrainNo, delayCell(c.DelaySource, c.DelayMinutes()), clock(c.EstDep), clock(c.EstArr), lateStatus(b, c))
 	}
 	return tb.render()
 }
@@ -342,11 +392,11 @@ func lateStatus(b domain.Brief, c domain.Candidate) string {
 // measurement; the note under the table spells that out in words.
 const noDelayData = "--"
 
-func delayCell(c domain.Candidate) string {
-	if c.DelaySource == domain.DelaySourceNone {
+func delayCell(source domain.DelaySource, minutes int) string {
+	if source == domain.DelaySourceNone {
 		return noDelayData
 	}
-	return fmt.Sprintf("+%d", c.DelayMinutes())
+	return fmt.Sprintf("+%d", minutes)
 }
 
 func delayPhrase(c domain.Candidate) string {
@@ -360,11 +410,11 @@ func delayPhrase(c domain.Candidate) string {
 	}
 }
 
-func unknownTypeWarning(p domain.Plan) string {
-	if len(p.UnknownTypes) == 0 {
+func unknownTypeWarning(types []string) string {
+	if len(types) == 0 {
 		return ""
 	}
-	return "注意：車種未知（" + esc(strings.Join(p.UnknownTypes, "、")) +
+	return "注意：車種未知（" + esc(strings.Join(types, "、")) +
 		"），請確認可否持電子票證乘車"
 }
 

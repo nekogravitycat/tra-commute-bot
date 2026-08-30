@@ -220,13 +220,17 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 		notifier = bot
 	}
 
+	timetableSrc := &authOnDemand{client: client}
+	delaySrc := &authOnDemand{client: client}
+	renderer := render.Telegram{
+		MaxAlternatives: cfg.MaxAlternatives,
+		CertificateNote: cfg.CertificateNote,
+	}
+
 	brief := &usecase.Brief{
-		Timetable: &authOnDemand{client: client},
-		Delays:    &authOnDemand{client: client},
-		Renderer: render.Telegram{
-			MaxAlternatives: cfg.MaxAlternatives,
-			CertificateNote: cfg.CertificateNote,
-		},
+		Timetable:   timetableSrc,
+		Delays:      delaySrc,
+		Renderer:    renderer,
 		Notifier:    notifier,
 		Log:         log,
 		SendRetries: sendRetries,
@@ -250,9 +254,15 @@ func build(o options, cfg config.Config, log *slog.Logger) (*application, error)
 
 	var router *command.Router
 	if bot != nil {
+		board := &usecase.Board{
+			Timetable: timetableSrc,
+			Delays:    delaySrc,
+			Filter:    cfg.Filter,
+			Log:       log,
+		}
 		// State is swapped for the actor-backed store once serve() has ctx
 		// and the actor's Run goroutine to swap it for — see serve().
-		router = command.NewRouter(bot, actor, stateStore, domain.AllStations, cfg.Credentials.TelegramChatID, log)
+		router = command.NewRouter(bot, actor, stateStore, domain.AllStations, board, renderer, cfg.Credentials.TelegramChatID, log)
 	}
 
 	return &application{

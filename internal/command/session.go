@@ -31,6 +31,16 @@ const (
 	FieldWeekdays
 	FieldNotifyAt
 	FieldMaxEarlyLeave
+
+	// The fields collected by /shortcuts' add flow. These are distinct from
+	// FieldOrigin/FieldDestination above even though both ask "which
+	// station" — see stationSetterFor in flows.go, which is what lets the
+	// two flows reuse subflow A's matching and disambiguation without ever
+	// confusing which draft (Session.Draft vs Session.ShortcutDraft) an
+	// answer belongs in.
+	FieldShortcutTrigger
+	FieldShortcutOrigin
+	FieldShortcutDestination
 )
 
 // setupFields is the full question order for /setup (§10.5).
@@ -39,6 +49,23 @@ var setupFields = []Field{
 	FieldReadyAt, FieldDeadlineAt,
 	FieldWeekdays, FieldNotifyAt, FieldMaxEarlyLeave,
 }
+
+// shortcutFields is the full question order for /shortcuts' add flow.
+var shortcutFields = []Field{FieldShortcutTrigger, FieldShortcutOrigin, FieldShortcutDestination}
+
+// SessionKind distinguishes which draft struct a Session's Fields/Cursor
+// collection loop is filling in, since /setup, /manage's field edits and
+// /shortcuts' add flow all share that loop (see flows.go) but write into
+// different structs.
+type SessionKind int
+
+const (
+	// KindSchedule is /setup building a brand new Settings, or /manage
+	// editing an existing one — the two share Session.Draft.
+	KindSchedule SessionKind = iota
+	// KindShortcut is /shortcuts' add flow, building a Session.ShortcutDraft.
+	KindShortcut
+)
 
 // Session is one chat's in-progress flow: either /setup building a brand new
 // Schedule, or /manage editing (a subset of the fields of) an existing one.
@@ -53,11 +80,18 @@ var setupFields = []Field{
 type Session struct {
 	ChatID int64
 
+	// Kind says which draft below (Draft or ShortcutDraft) this session's
+	// Fields/Cursor loop is filling in. Zero value is KindSchedule, so every
+	// existing schedule/manage session need not set it explicitly.
+	Kind SessionKind
+
 	// Editing is "" while building a brand new Schedule via /setup, and the
 	// Settings.Name being edited while inside a /manage field edit or while
 	// simply viewing that Schedule's card. It is what tells finishFlow
 	// whether completing the field list means "show the create-confirmation
-	// card" (§10.5) or "apply the edit immediately" (§10.6).
+	// card" (§10.5) or "apply the edit immediately" (§10.6). Meaningless for
+	// KindShortcut, which always applies immediately (§10.x, mirroring
+	// /usualtrain's simplicity rather than /setup's confirmation card).
 	Editing string
 	// Original is a snapshot of the Schedule as it was before this flow
 	// began, used both to validate a rename (Upsert needs the old name to
@@ -68,6 +102,9 @@ type Session struct {
 	// field the flow never touches (e.g. editing just T_ready leaves Route
 	// alone) still has its real value when the draft is written back.
 	Draft domain.Settings
+	// ShortcutDraft accumulates /shortcuts' add flow answers, the
+	// KindShortcut counterpart of Draft.
+	ShortcutDraft domain.Shortcut
 
 	// Fields and Cursor track collection progress. Fields is nil while a
 	// Session merely represents a resting /manage view (the schedule list or
@@ -119,6 +156,10 @@ func (s *Session) currentField() (Field, bool) {
 
 func newSetupSession(chatID int64, now time.Time) *Session {
 	return &Session{ChatID: chatID, Fields: append([]Field{}, setupFields...), UpdatedAt: now}
+}
+
+func newShortcutSession(chatID int64, now time.Time) *Session {
+	return &Session{ChatID: chatID, Kind: KindShortcut, Fields: append([]Field{}, shortcutFields...), UpdatedAt: now}
 }
 
 func newEditSession(chatID int64, existing domain.Settings, fields []Field, now time.Time) *Session {

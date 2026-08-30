@@ -45,11 +45,12 @@ type Message struct {
 	ParseMode string
 }
 
-// Renderer turns a brief into a message. Keeping this behind a port is what
-// lets -dry-run print the exact bytes that would have been sent, rather than an
-// approximation of them.
+// Renderer turns a brief, or a shortcut's board query, into a message.
+// Keeping this behind a port is what lets -dry-run print the exact bytes
+// that would have been sent, rather than an approximation of them.
 type Renderer interface {
 	Render(domain.Brief) Message
+	RenderBoard(BoardResult) Message
 }
 
 // Notifier delivers a message.

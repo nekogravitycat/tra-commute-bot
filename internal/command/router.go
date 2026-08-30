@@ -22,6 +22,12 @@ type Router struct {
 	Actor    *usecase.SettingsActor
 	State    usecase.StateStore
 	Stations []domain.Station
+	// Board and Renderer answer /shortcuts triggers (§10.x): Board runs the
+	// live query, Renderer turns the result into a message, the same
+	// division of labour usecase.Brief and its Renderer use for a scheduled
+	// brief.
+	Board    *usecase.Board
+	Renderer usecase.Renderer
 	Log      *slog.Logger
 
 	// chatID is the single chat this bot answers to (TELEGRAM_CHAT_ID),
@@ -37,19 +43,19 @@ type Router struct {
 	sessions map[int64]*Session
 }
 
-// NewRouter builds a Router. Bot, Actor, State and Stations must all be set,
-// and chatID must parse as an int64 — the composition root gets it from
-// config.Credentials.TelegramChatID, which config.LoadCredentials reads
-// straight from the environment with no validation of its own, so a typo'd
-// TELEGRAM_CHAT_ID surfaces here instead of as a router that silently
+// NewRouter builds a Router. Bot, Actor, State, Stations, Board and Renderer
+// must all be set, and chatID must parse as an int64 — the composition root
+// gets it from config.Credentials.TelegramChatID, which config.LoadCredentials
+// reads straight from the environment with no validation of its own, so a
+// typo'd TELEGRAM_CHAT_ID surfaces here instead of as a router that silently
 // answers no chat at all.
-func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state usecase.StateStore, stations []domain.Station, chatID string, log *slog.Logger) *Router {
+func NewRouter(bot *telegram.Notifier, actor *usecase.SettingsActor, state usecase.StateStore, stations []domain.Station, board *usecase.Board, renderer usecase.Renderer, chatID string, log *slog.Logger) *Router {
 	id, err := strconv.ParseInt(chatID, 10, 64)
 	if err != nil {
 		log.Error("TELEGRAM_CHAT_ID is not a valid chat ID, the bot will answer no chat", "value", chatID, "err", err)
 	}
 	return &Router{
-		Bot: bot, Actor: actor, State: state, Stations: stations, Log: log,
+		Bot: bot, Actor: actor, State: state, Stations: stations, Board: board, Renderer: renderer, Log: log,
 		chatID:   id,
 		sessions: map[int64]*Session{},
 	}
@@ -62,6 +68,7 @@ var botCommands = []telegram.BotCommand{
 	{Command: "setup", Description: "建立一條新的通勤規則"},
 	{Command: "manage", Description: "查看、修改或刪除現有規則"},
 	{Command: "usualtrain", Description: "管理常搭班次"},
+	{Command: "shortcuts", Description: "管理快捷查詢"},
 	{Command: "status", Description: "查看每條規則的狀態"},
 	{Command: "cancel", Description: "取消進行中的操作"},
 	{Command: "help", Description: "顯示這份說明"},
@@ -122,6 +129,9 @@ func (r *Router) handleMessage(ctx context.Context, msg telegram.Message) {
 	case "/usualtrain":
 		r.startUsualTrain(ctx, msg.Chat.ID)
 		return
+	case "/shortcuts":
+		r.startShortcuts(ctx, msg.Chat.ID)
+		return
 	case "/status":
 		r.handleStatus(ctx)
 		return
@@ -139,20 +149,34 @@ func (r *Router) handleMessage(ctx context.Context, msg telegram.Message) {
 	sess := r.session(msg.Chat.ID)
 	if sess.stale(now) {
 		r.clearSession(msg.Chat.ID)
-		r.send(ctx, "請用 /setup 或 /manage 開始，或輸入 /help 查看指令")
-		return
+		sess = nil
 	}
-	if sess.AwaitingUsualTrainNo {
+	if sess != nil && sess.AwaitingUsualTrainNo {
 		sess.UpdatedAt = now
 		r.handleUsualTrainText(ctx, sess, text)
 		return
 	}
-	if _, ok := sess.currentField(); !ok {
+	if sess != nil {
+		if _, ok := sess.currentField(); ok {
+			sess.UpdatedAt = now
+			r.handleFieldText(ctx, sess, text)
+			return
+		}
+	}
+
+	// No active flow is waiting on this text — try it as a shortcut trigger
+	// (§10.x) before falling back to "not sure what you mean". A flow in
+	// progress always wins over a shortcut match (checked above), so a
+	// trigger word typed as, say, a schedule's name mid-/setup is taken as
+	// that answer, not as a jump to some unrelated query.
+	if r.tryShortcut(ctx, text) {
+		return
+	}
+	if sess != nil {
 		r.send(ctx, "請用上面的按鈕操作，或輸入 /cancel 取消")
 		return
 	}
-	sess.UpdatedAt = now
-	r.handleFieldText(ctx, sess, text)
+	r.send(ctx, "請用 /setup 或 /manage 開始，或輸入 /help 查看指令")
 }
 
 func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) {
@@ -172,6 +196,9 @@ func (r *Router) handleCallback(ctx context.Context, cq telegram.CallbackQuery) 
 		return
 	case strings.HasPrefix(data, "ut:"):
 		r.handleUsualTrainCallback(ctx, chatID, cq)
+		return
+	case strings.HasPrefix(data, "sc:"):
+		r.handleShortcutsCallback(ctx, chatID, cq)
 		return
 	case data == cbManageNew:
 		r.answer(ctx, cq.ID, "")

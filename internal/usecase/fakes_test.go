@@ -64,6 +64,10 @@ func (f *fakeRenderer) Render(b domain.Brief) Message {
 	return Message{Text: "rendered:" + b.Mode.String(), ParseMode: "HTML"}
 }
 
+func (f *fakeRenderer) RenderBoard(BoardResult) Message {
+	return Message{Text: "rendered:board", ParseMode: "HTML"}
+}
+
 // fakeNotifier fails its first failUntil sends, then succeeds.
 type fakeNotifier struct {
 	sent     []Message

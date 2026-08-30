@@ -11,7 +11,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/render"
 	"github.com/nekogravitycat/tra-commute-bot/internal/adapter/telegram"
 	"github.com/nekogravitycat/tra-commute-bot/internal/domain"
 	"github.com/nekogravitycat/tra-commute-bot/internal/usecase"
@@ -121,6 +123,28 @@ func (f *fakeState) Save(s domain.TickState) error {
 	return nil
 }
 
+// fakeTimetable and fakeDelays are minimal in-memory usecase.TimetableSource
+// / usecase.DelaySource implementations, local to this package's tests, so a
+// /shortcuts test can control exactly what a board query sees without
+// spinning up the real TDX adapter.
+type fakeTimetable struct {
+	timetable usecase.Timetable
+	err       error
+}
+
+func (f *fakeTimetable) DailyODTimetable(context.Context, string, string, time.Time) (usecase.Timetable, error) {
+	return f.timetable, f.err
+}
+
+type fakeDelays struct {
+	snapshot usecase.DelaySnapshot
+	err      error
+}
+
+func (f *fakeDelays) LiveDelays(context.Context) (usecase.DelaySnapshot, error) {
+	return f.snapshot, f.err
+}
+
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError}))
 }
@@ -133,7 +157,12 @@ func newTestRouter(t *testing.T) (*Router, *mockBot, *fakeSettings) {
 	t.Cleanup(cancel)
 	go actor.Run(ctx)
 
-	r := NewRouter(bot, actor, &fakeState{}, testStations(), fmt.Sprint(testChatID), quietLogger())
+	board := &usecase.Board{
+		Timetable: &fakeTimetable{},
+		Delays:    &fakeDelays{},
+		Log:       quietLogger(),
+	}
+	r := NewRouter(bot, actor, &fakeState{}, testStations(), board, render.Telegram{}, fmt.Sprint(testChatID), quietLogger())
 	return r, mb, store
 }
 

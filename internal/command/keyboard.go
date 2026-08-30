@@ -40,6 +40,10 @@ const (
 	cbUsualTrainAdd  = "ut:add"  // prompts for a train number as free text
 	cbUsualTrainDel  = "ut:del:" // ut:del:<train no>
 	cbUsualTrainDone = "ut:done"
+
+	cbShortcutAdd  = "sc:add"  // starts the add flow (§10.4-A reused via FieldShortcut*)
+	cbShortcutDel  = "sc:del:" // sc:del:<trigger>
+	cbShortcutDone = "sc:done"
 )
 
 // weekdayOrder is the button layout order for subflow C (§10.4-C): 一 to 日.
@@ -177,6 +181,27 @@ func usualTrainKeyboard(nos []string) telegram.InlineKeyboardMarkup {
 	m.InlineKeyboard = append(m.InlineKeyboard,
 		row(btn("➕ 新增常搭班次", cbUsualTrainAdd)),
 		row(btn("✅ 完成", cbUsualTrainDone)),
+	)
+	return m
+}
+
+// shortcutsKeyboard lists every configured Shortcut as its own delete
+// button — tapping one removes just that trigger — plus the add and done
+// shortcuts, the same shape as usualTrainKeyboard. The button data carries
+// the trigger itself rather than an index: unlike Schedules a Shortcut is
+// never edited in place, so there is no card to reopen and nothing an index
+// would save over the trigger being unique already. This is safe against
+// Telegram's 64-byte callback_data limit only because maxShortcutTriggerLen
+// (shortcuts.go) keeps a trigger far short of that budget.
+func shortcutsKeyboard(shortcuts []domain.Shortcut) telegram.InlineKeyboardMarkup {
+	m := telegram.InlineKeyboardMarkup{}
+	for _, s := range shortcuts {
+		label := fmt.Sprintf("🗑 %s：%s→%s", s.Trigger, s.OriginName, s.DestinationName)
+		m.InlineKeyboard = append(m.InlineKeyboard, row(btn(label, cbShortcutDel+s.Trigger)))
+	}
+	m.InlineKeyboard = append(m.InlineKeyboard,
+		row(btn("➕ 新增捷徑", cbShortcutAdd)),
+		row(btn("✅ 完成", cbShortcutDone)),
 	)
 	return m
 }

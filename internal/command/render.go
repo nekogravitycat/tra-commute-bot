@@ -149,6 +149,7 @@ func helpMessage(hasSchedules bool) string {
 			"/setup 建立一條新的通勤規則\n" +
 			"/manage 查看、修改或刪除現有規則\n" +
 			"/usualtrain 管理常搭班次\n" +
+			"/shortcuts 管理快捷查詢\n" +
 			"/status 查看每條規則的狀態\n" +
 			"/cancel 取消進行中的操作\n" +
 			"/help 顯示這份說明"
@@ -157,6 +158,7 @@ func helpMessage(hasSchedules bool) string {
 		"/setup 建立一條新的通勤規則\n" +
 		"/manage 查看、修改或刪除現有規則\n" +
 		"/usualtrain 管理常搭班次\n" +
+		"/shortcuts 管理快捷查詢\n" +
 		"/status 查看每條規則的狀態\n" +
 		"/cancel 取消進行中的操作\n" +
 		"/help 顯示這份說明"

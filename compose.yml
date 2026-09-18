@@ -6,8 +6,9 @@
 # a container recreate never loses a live setting or the day's tick guard.
 services:
   tracommute:
-    build: .
-    image: tra-commute-bot:latest
+    # Built by .github/workflows/ci.yml's build-image job on every push to
+    # main; `edge` always tracks that branch's most recent build.
+    image: ghcr.io/nekogravitycat/tra-commute-bot:edge
     restart: unless-stopped
     env_file:
       - .env

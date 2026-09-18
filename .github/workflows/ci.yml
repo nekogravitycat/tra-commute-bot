@@ -3,8 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -81,13 +81,17 @@ jobs:
           # addressing.
           version: v2.12.2
 
-  release:
-    # §4.2: GitHub Actions builds and pushes the Docker image on a tag — it is
-    # never the scheduler itself, since `schedule:` triggers run 5-20 minutes
-    # late, which this system's minute-scale delivery budget cannot absorb.
-    if: startsWith(github.ref, 'refs/tags/v')
+  build-image:
+    # Continuous image build so main always has a fresh, tested image to pull,
+    # tagged `edge` and with the commit's short sha.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: [test, lint]
     runs-on: ubuntu-latest
+    concurrency:
+      group: build-image-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       contents: read
       packages: write
@@ -102,12 +106,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=edge,enable={{is_default_branch}}
+            type=sha,format=short
+
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+            VERSION=${{ steps.meta.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

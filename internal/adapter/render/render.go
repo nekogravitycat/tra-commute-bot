@@ -323,14 +323,15 @@ func (t Telegram) boardRows(rows []domain.BoardRow) []domain.BoardRow {
 
 // typeAbbrevs maps a train type's Chinese name to a short ASCII code for the
 // board table's TYPE column, checked in order so a more specific keyword is
-// never shadowed by a shorter one it contains — most importantly 新自強
-// before 自強, since 新自強 (EMU3000) is a different electronic-ticket
-// eligibility case from a plain 自強 despite sharing that substring, and
-// 區間快 before 區間 for the same reason. This is display-only: it lives
-// here rather than in domain.TypeFilter/config, which is what actually
-// decides eligibility.
+// never shadowed by a shorter one it contains — most importantly 自強(3000)
+// before plain 自強, since TDX names the EMU3000 "自強(3000)(EMU3000 型電車)"
+// (not "新自強" — there is no such string in the live feed) and it is a
+// different electronic-ticket eligibility case from a plain 自強 despite
+// sharing that substring, and 區間快 before 區間 for the same reason. This is
+// display-only: it lives here rather than in domain.TypeFilter/config, which
+// is what actually decides eligibility.
 var typeAbbrevs = []struct{ keyword, code string }{
-	{"新自強", "NTC"},
+	{"自強(3000)", "NTC"},
 	{"自強", "TC"},
 	{"區間快", "FLOC"},
 	{"區間", "LOC"},

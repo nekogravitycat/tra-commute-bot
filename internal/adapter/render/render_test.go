@@ -701,15 +701,15 @@ func TestRenderBoardShowsTrainTypeAbbreviation(t *testing.T) {
 
 func TestTypeAbbrev(t *testing.T) {
 	tests := map[string]string{
-		"區間":   "LOC",
-		"區間快":  "FLOC",
-		"莒光":   "CK",
-		"自強":   "TC",
-		"新自強":  "NTC", // must not fall back to plain 自強's TC: different ticket eligibility
-		"復興":   "FH",
-		"太魯閣":  "TRK",
-		"普悠瑪":  "PYM",
-		"磁浮特快": "?",
+		"區間":                    "LOC",
+		"區間快":                   "FLOC",
+		"莒光":                    "CK",
+		"自強":                    "TC",
+		"自強(3000)(EMU3000 型電車)": "NTC", // TDX's real EMU3000 name; must not fall back to plain 自強's TC
+		"復興":                    "FH",
+		"太魯閣":                   "TRK",
+		"普悠瑪":                   "PYM",
+		"磁浮特快":                  "?",
 	}
 	for name, want := range tests {
 		if got := typeAbbrev(name); got != want {
@@ -719,13 +719,14 @@ func TestTypeAbbrev(t *testing.T) {
 }
 
 // TestRenderBoardDistinguishesNewTzeChiang guards the regression a plain
-// Contains match would otherwise cause: 新自強 contains 自強 as a substring,
-// but the two have different electronic-ticket eligibility, so the table
-// must never show a 新自強 row as plain TC.
+// Contains match would otherwise cause: TDX's real EMU3000 type name,
+// "自強(3000)(EMU3000 型電車)", contains 自強 as a substring, but the two
+// have different electronic-ticket eligibility, so the table must never show
+// an EMU3000 row as plain TC.
 func TestRenderBoardDistinguishesNewTzeChiang(t *testing.T) {
 	services := []domain.Service{
 		svc("101", "1131", "自強", "08:00", "08:30"),
-		svc("102", "1132", "新自強", "08:10", "08:40"),
+		svc("102", "1132", "自強(3000)(EMU3000 型電車)", "08:10", "08:40"),
 	}
 	res := buildBoardResult(services, map[string]int{}, at("07:00"))
 	msg := testRenderer().RenderBoard(res)
@@ -747,7 +748,7 @@ func TestRenderBoardDistinguishesNewTzeChiang(t *testing.T) {
 		t.Errorf("plain 自強 row should show TC, not NTC:\n%s", plain)
 	}
 	if !strings.Contains(newTC, "NTC") {
-		t.Errorf("新自強 row should show NTC:\n%s", newTC)
+		t.Errorf("EMU3000 row should show NTC:\n%s", newTC)
 	}
 }
 
